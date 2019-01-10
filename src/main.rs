@@ -72,10 +72,10 @@ fn main() {
         .output(component::registry().output("stdout").unwrap().new(
             value!{{}}.into(),
             component::output::CommonConfig {
-                codec: Some(component::codec::plain::Provider.new(value!{{}}.into()).unwrap()),
+                codec: Some(component::registry().codec("plain").unwrap().new(value!{{}}.into()).unwrap()),
                 .. Default::default()
             }).unwrap())
-        .output(component::output::null::Provider.new(value!{{}}.into(),
+        .output(component::registry().output("null").unwrap().new(value!{{}}.into(),
             Default::default()).unwrap())
     ;
 

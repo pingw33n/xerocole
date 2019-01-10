@@ -3,6 +3,7 @@ pub mod stdout;
 
 use futures::sink::BoxSink;
 
+use super::*;
 use component::codec::Codec;
 use error::Error;
 use event::*;
@@ -16,6 +17,10 @@ pub struct CommonConfig {
 
 pub struct Started {
     pub sink: BoxSink<Event, Error>,
+}
+
+pub trait OutputProvider: Provider {
+    fn new(&self, config: Spanned<Value>, common_config: CommonConfig) -> Result<Box<Output>>;
 }
 
 pub trait Output: Send + 'static {

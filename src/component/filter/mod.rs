@@ -2,9 +2,11 @@ pub mod grok;
 
 use std::sync::Arc;
 
+use super::*;
 use error::Error;
 use event::*;
 use util::futures::{BoxFuture, BoxStream};
+use value::*;
 
 #[derive(Default)]
 pub struct CommonConfig {
@@ -13,6 +15,10 @@ pub struct CommonConfig {
 
 pub struct Started {
     pub instance: Arc<Instance>,
+}
+
+pub trait FilterProvider: Provider {
+    fn new(&self, config: Spanned<Value>, common_config: CommonConfig) -> Result<Box<Filter>>;
 }
 
 pub trait Filter: Send + 'static {

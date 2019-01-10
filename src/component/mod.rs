@@ -5,27 +5,15 @@ pub mod output;
 
 use std::collections::HashMap;
 
+use codec::CodecProvider;
 use error::*;
+use filter::FilterProvider;
+use input::InputProvider;
+use output::OutputProvider;
 use value::*;
 
 pub trait Provider: Send + Sync {
     fn metadata(&self) -> Metadata;
-}
-
-pub trait FilterProvider: Provider {
-    fn new(&self, config: Spanned<Value>, common_config: filter::CommonConfig) -> Result<Box<filter::Filter>>;
-}
-
-pub trait InputProvider: Provider {
-    fn new(&self, config: Spanned<Value>, common_config: input::CommonConfig) -> Result<Box<input::Input>>;
-}
-
-pub trait CodecProvider: Provider {
-    fn new(&self, config: Spanned<Value>) -> Result<Box<codec::Codec>>;
-}
-
-pub trait OutputProvider: Provider {
-    fn new(&self, config: Spanned<Value>, common_config: output::CommonConfig) -> Result<Box<output::Output>>;
 }
 
 pub trait Node: Send {

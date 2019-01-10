@@ -1,7 +1,7 @@
 pub mod file;
 
+use super::*;
 use component::codec::Codec;
-use super::Node;
 use error::Error;
 use event::*;
 use util::futures::*;
@@ -15,6 +15,10 @@ pub struct CommonConfig {
 pub struct Started {
     pub stream: BoxStream<Event, Error>,
     pub shutdown: signal::Sender,
+}
+
+pub trait InputProvider: Provider {
+    fn new(&self, config: Spanned<Value>, common_config: input::CommonConfig) -> Result<Box<Input>>;
 }
 
 pub trait Input: Node {
