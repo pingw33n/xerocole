@@ -25,11 +25,9 @@ impl super::super::Provider for Provider {
 }
 
 impl FilterProvider for Provider {
-    fn new(&self, config: Spanned<Value>, _common_config: filter::CommonConfig)
-        -> Result<Box<filter::Filter>>
-    {
+    fn new(&self, ctx: New) -> Result<Box<Filter>> {
         Ok(Box::new(GrokFilter {
-            config: Config::parse(config)?,
+            config: Config::parse(ctx.config)?,
         }))
     }
 }

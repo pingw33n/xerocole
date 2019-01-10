@@ -4,8 +4,12 @@ use super::*;
 use error::*;
 use event::*;
 
+pub struct New {
+    pub config: Spanned<Value>
+}
+
 pub trait CodecProvider: Provider {
-    fn new(&self, config: Spanned<Value>) -> Result<Box<Codec>>;
+    fn new(&self, ctx: New) -> Result<Box<Codec>>;
 }
 
 pub trait Codec: Send + 'static {

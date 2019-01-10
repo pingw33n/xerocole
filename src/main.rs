@@ -32,6 +32,10 @@ use futures::prelude::*;
 use std::sync::Arc;
 
 use component::*;
+use component::codec;
+use component::filter;
+use component::input;
+use component::output;
 use metrics::Metrics;
 use tokio::timer::Interval;
 use std::time::Instant;
@@ -41,20 +45,20 @@ fn main() {
     env_logger::init();
 
     let codec = registry().codec("plain").unwrap()
-        .new(value!{{ "charset" => "UTF-8" }}.into()).unwrap();
-    let input = registry()
-        .input("file").unwrap()
-        .new(value!{{
+        .new(codec::New { config: value!{{ "charset" => "UTF-8" }}.into() }).unwrap();
+    let input = registry().input("file").unwrap().new(input::New {
+        config: value!{{
             "path" => [
                 "/tmp/log.txt",
                 "/tmp/log.*.txt",
 //                "misc/access.log".into(),
             ],
             "start_position" => "beginning",
-        }}.into(), input::CommonConfig {
+        }}.into(),
+        common_config: input::CommonConfig {
             codec: Some(codec),
             .. Default::default()
-        })
+        }})
         .unwrap();
 
     let metrics = Arc::new(Metrics::new());
@@ -62,21 +66,26 @@ fn main() {
     let mut ppl_builder = pipeline::PipelineBuilder::new(metrics.clone());
     ppl_builder
         .input(None, input)
-        .filter(component::registry().filter("grok").unwrap().new(
-            value!{{
+        .filter(component::registry().filter("grok").unwrap().new(filter::New {
+            config: value!{{
                 "match" => {
                     "message" => r#"(?<controller>[^#]+)#(?<action>\w+)"#,
                 }
             }}.into(),
-            Default::default()).unwrap())
-        .output(component::registry().output("stdout").unwrap().new(
-            value!{{}}.into(),
-            component::output::CommonConfig {
-                codec: Some(component::registry().codec("plain").unwrap().new(value!{{}}.into()).unwrap()),
-                .. Default::default()
-            }).unwrap())
-        .output(component::registry().output("null").unwrap().new(value!{{}}.into(),
-            Default::default()).unwrap())
+            common_config: Default::default()
+        }).unwrap())
+        .output(component::registry().output("stdout").unwrap().new(output::New {
+            config: value! {{}}.into(),
+            common_config: output::CommonConfig {
+                codec: Some(component::registry().codec("plain").unwrap().new(
+                    codec::New { config: value! {{}}.into() }).unwrap()),
+                ..Default::default()
+            }
+        }).unwrap())
+        .output(component::registry().output("null").unwrap().new(output::New {
+            config: value! {{}}.into(),
+            common_config: Default::default(),
+        }).unwrap())
     ;
 
     let tp_size = num_cpus::get();

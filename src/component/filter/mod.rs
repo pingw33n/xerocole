@@ -13,12 +13,17 @@ pub struct CommonConfig {
     pub id: Option<String>,
 }
 
+pub struct New {
+    pub config: Spanned<Value>,
+    pub common_config: CommonConfig,
+}
+
 pub struct Started {
     pub instance: Arc<Instance>,
 }
 
 pub trait FilterProvider: Provider {
-    fn new(&self, config: Spanned<Value>, common_config: CommonConfig) -> Result<Box<Filter>>;
+    fn new(&self, ctx: New) -> Result<Box<Filter>>;
 }
 
 pub trait Filter: Send + 'static {

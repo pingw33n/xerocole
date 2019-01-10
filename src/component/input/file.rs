@@ -27,13 +27,6 @@ pub struct Provider;
 
 impl Provider {
     pub const NAME: &'static str = "file";
-
-    fn with_config(config: Config, common_config: CommonConfig) -> Result<Box<Input>> {
-        Ok(Box::new(FileInput {
-            config,
-            common_config,
-        }))
-    }
 }
 
 impl super::super::Provider for Provider {
@@ -46,8 +39,11 @@ impl super::super::Provider for Provider {
 }
 
 impl InputProvider for Provider {
-    fn new(&self, config: Spanned<Value>, common_config: CommonConfig) -> Result<Box<Input>> {
-        Self::with_config(Config::parse(config)?, common_config)
+    fn new(&self, ctx: New) -> Result<Box<Input>> {
+        Ok(Box::new(FileInput {
+            config: Config::parse(ctx.config)?,
+            common_config: ctx.common_config,
+        }))
     }
 }
 

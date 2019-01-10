@@ -15,12 +15,17 @@ pub struct CommonConfig {
     pub codec: Option<Box<Codec>>,
 }
 
+pub struct New {
+    pub config: Spanned<Value>,
+    pub common_config: CommonConfig,
+}
+
 pub struct Started {
     pub sink: BoxSink<Event, Error>,
 }
 
 pub trait OutputProvider: Provider {
-    fn new(&self, config: Spanned<Value>, common_config: CommonConfig) -> Result<Box<Output>>;
+    fn new(&self, ctx: New) -> Result<Box<Output>>;
 }
 
 pub trait Output: Send + 'static {

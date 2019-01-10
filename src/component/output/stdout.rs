@@ -22,7 +22,7 @@ impl super::super::Provider for Provider {
 }
 
 impl OutputProvider for Provider {
-    fn new(&self, _config: Spanned<Value>, _common_config: CommonConfig) -> Result<Box<Output>> {
+    fn new(&self, _ctx: New) -> Result<Box<Output>> {
         Ok(Box::new(StdoutOutput))
     }
 }

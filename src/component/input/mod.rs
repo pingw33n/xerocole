@@ -12,13 +12,18 @@ pub struct CommonConfig {
     pub codec: Option<Box<Codec>>,
 }
 
+pub struct New {
+    pub config: Spanned<Value>,
+    pub common_config: CommonConfig,
+}
+
 pub struct Started {
     pub stream: BoxStream<Event, Error>,
     pub shutdown: signal::Sender,
 }
 
 pub trait InputProvider: Provider {
-    fn new(&self, config: Spanned<Value>, common_config: input::CommonConfig) -> Result<Box<Input>>;
+    fn new(&self, ctx: New) -> Result<Box<Input>>;
 }
 
 pub trait Input: Node {

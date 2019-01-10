@@ -19,8 +19,8 @@ impl super::super::Provider for Provider {
 }
 
 impl CodecProvider for Provider {
-    fn new(&self, config: Spanned<Value>) -> Result<Box<Codec>> {
-        let charset = config.get_opt_str("charset")?.unwrap_or("UTF-8");
+    fn new(&self, ctx: New) -> Result<Box<Codec>> {
+        let charset = ctx.config.get_opt_str("charset")?.unwrap_or("UTF-8");
         // FIXME
         assert!(charset.eq_ignore_ascii_case("UTF-8"));
         Ok(Box::new(PlainCodec))
