@@ -8,8 +8,9 @@ use error::Error;
 use event::*;
 use util::futures::BoxFuture;
 
+#[derive(Default)]
 pub struct CommonConfig {
-    pub id: String,
+    pub id: Option<String>,
     pub codec: Option<Box<Codec>>,
 }
 

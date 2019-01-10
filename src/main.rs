@@ -52,8 +52,8 @@ fn main() {
             ],
             "start_position" => "beginning",
         }}.into(), input::CommonConfig {
-            id: "file-input-1".into(),
             codec: Some(codec),
+            .. Default::default()
         })
         .unwrap();
 
@@ -71,10 +71,12 @@ fn main() {
             Default::default()).unwrap())
         .output(component::registry().output("stdout").unwrap().new(
             value!{{}}.into(),
-            component::output::CommonConfig { id: "stdout".into(),
-                codec: Some(component::codec::plain::Provider.new(value!{{}}.into()).unwrap()) }).unwrap())
+            component::output::CommonConfig {
+                codec: Some(component::codec::plain::Provider.new(value!{{}}.into()).unwrap()),
+                .. Default::default()
+            }).unwrap())
         .output(component::output::null::Provider.new(value!{{}}.into(),
-            component::output::CommonConfig { id: "null".into(), codec: None }).unwrap())
+            Default::default()).unwrap())
     ;
 
     let tp_size = num_cpus::get();
