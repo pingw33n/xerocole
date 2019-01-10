@@ -3,11 +3,21 @@ use std::ops::{Deref, DerefMut, Range};
 
 pub type List = Vec<Spanned<Value>>;
 pub type Map = HashMap<String, Spanned<Value>>;
+pub type Span = Range<u32>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Spanned<T> {
     pub value: T,
-    pub span: Range<u32>,
+    pub span: Span,
+}
+
+impl<T> Spanned<T> {
+    pub fn new_error(&self, msg: impl Into<String>) -> ValueError {
+        ValueError {
+            msg: msg.into(),
+            span: self.span.clone(),
+        }
+    }
 }
 
 impl<T> From<T> for Spanned<T> {
@@ -112,11 +122,11 @@ impl Value {
 #[derive(Debug)]
 pub struct ValueError {
     pub msg: String,
-    pub span: Range<u32>,
+    pub span: Span,
 }
 
 impl ValueError {
-    pub fn at(self, span: Range<u32>) -> Self {
+    pub fn at(self, span: Span) -> Self {
         Self {
             msg: self.msg,
             span,
