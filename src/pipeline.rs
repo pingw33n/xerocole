@@ -9,7 +9,7 @@ use component::input::Input;
 use component::filter::Filter;
 use component::output::Output;
 use event::Event;
-use metrics::{self, Metrics};
+use metric::{self, Metrics};
 use util::futures::*;
 
 struct InputInfo {
@@ -102,7 +102,7 @@ impl PipelineBuilder {
             let InputInfo { id, input } = input;
             let name = input.provider_metadata().name;
             let out_metric_name = format!("input.{}.out", id.clone());
-            metrics.set(out_metric_name.clone(), metrics::Value::Counter(metrics::Number::Int(0)));
+            metrics.set(out_metric_name.clone(), metric::Value::Counter(metric::Number::Int(0)));
             executor::spawn(input.start()
                 .inspect(move |_| info!("started input {} ({})", id, name))
                 // TODO handle input start failures.

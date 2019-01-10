@@ -8,7 +8,6 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub enum Error {
     Io(io::Error),
     ValueError(ValueError),
-    MissingRequired(&'static str),
     Generic(&'static str),
 }
 
