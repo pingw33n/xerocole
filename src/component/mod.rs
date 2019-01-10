@@ -12,6 +12,10 @@ pub trait Provider: Send + Sync {
     fn metadata(&self) -> Metadata;
 }
 
+pub trait FilterProvider: Provider {
+    fn new(&self, config: Spanned<Value>, common_config: filter::CommonConfig) -> Result<Box<filter::Filter>>;
+}
+
 pub trait InputProvider: Provider {
     fn new(&self, config: Spanned<Value>, common_config: input::CommonConfig) -> Result<Box<input::Input>>;
 }
@@ -44,6 +48,7 @@ pub enum ComponentKind {
 
 enum TypedProvider {
     Codec(Box<CodecProvider>),
+    Filter(Box<FilterProvider>),
     Input(Box<InputProvider>),
     Output(Box<OutputProvider>),
 }
@@ -51,6 +56,14 @@ enum TypedProvider {
 impl TypedProvider {
     pub fn as_codec(&self) -> Option<&Box<CodecProvider>> {
         if let TypedProvider::Codec(ref v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_filter(&self) -> Option<&Box<FilterProvider>> {
+        if let TypedProvider::Filter(ref v) = self {
             Some(v)
         } else {
             None
@@ -83,6 +96,17 @@ impl Registry {
         Self {
             components: HashMap::new(),
         }
+    }
+
+    pub fn filter<'a>(&'a self, name: &str) -> Option<&'a dyn FilterProvider> {
+        self.components.get(&(ComponentKind::Filter, name.to_string()))
+            .and_then(|v| v.as_filter())
+            .map(|v| v.as_ref())
+    }
+
+    pub fn register_filter(&mut self, provider: impl 'static + FilterProvider) {
+        self.components.insert((ComponentKind::Filter, provider.metadata().name.into()),
+            TypedProvider::Filter(Box::new(provider)));
     }
 
     pub fn input<'a>(&'a self, name: &str) -> Option<&'a dyn InputProvider> {
@@ -123,7 +147,10 @@ lazy_static! {
     static ref REGISTRY: Registry = {
         let mut r = Registry::new();
 
+        r.register_filter(filter::grok::Provider);
+
         r.register_input(input::file::Provider);
+
         r.register_codec(codec::plain::Provider);
         r.register_output(output::null::Provider);
         r.register_output(output::stdout::Provider);

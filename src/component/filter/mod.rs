@@ -6,6 +6,11 @@ use error::Error;
 use event::*;
 use util::futures::{BoxFuture, BoxStream};
 
+#[derive(Default)]
+pub struct CommonConfig {
+    pub id: Option<String>,
+}
+
 pub struct Started {
     pub instance: Arc<Instance>,
 }

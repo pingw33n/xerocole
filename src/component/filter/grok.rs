@@ -2,21 +2,84 @@ use futures::{future, stream};
 use onig::Regex;
 use std::sync::Arc;
 
-use super::{Filter, Instance, Started};
+use super::*;
+use super::super::*;
 use error::Error;
 use event::*;
 use util::futures::{BoxFuture, BoxStream};
 use value::*;
 
-pub struct GrokFilter {
-    pub patterns: Vec<(String, Vec<Regex>)>,
+pub struct Provider;
+
+impl Provider {
+    pub const NAME: &'static str = "grok";
+}
+
+impl super::super::Provider for Provider {
+    fn metadata(&self) -> Metadata {
+        Metadata {
+            kind: ComponentKind::Filter,
+            name: Self::NAME,
+        }
+    }
+}
+
+impl FilterProvider for Provider {
+    fn new(&self, config: Spanned<Value>, _common_config: filter::CommonConfig)
+        -> Result<Box<filter::Filter>>
+    {
+        Ok(Box::new(GrokFilter {
+            config: Config::parse(config)?,
+        }))
+    }
+}
+
+struct Config {
+    patterns: Vec<(String, Vec<Regex>)>,
+}
+
+impl Config {
+    pub fn parse(mut value: Spanned<Value>) -> Result<Config> {
+        let mut patterns = Vec::new();
+        if let Some(patterns_v) = value.remove_opt("match")? {
+            for (name, pats_v) in patterns_v.into_map()? {
+                let mut pats = Vec::new();
+                match pats_v.kind() {
+                    ValueKind::String => {
+                        pats.push(Self::parse_regex(pats_v)?);
+                    }
+                    ValueKind::List => {
+                        for pat_v in pats_v.into_list()? {
+                            pats.push(Self::parse_regex(pat_v)?);
+                        }
+                    }
+                    _ => return Err(pats_v.new_error("expected String or List").into()),
+                }
+                patterns.push((name, pats));
+            }
+        }
+        Ok(Config {
+            patterns,
+        })
+    }
+
+    fn parse_regex(s: Spanned<Value>) -> Result<Regex> {
+        Regex::new(s.as_str()?).map_err(move |_| ValueError {
+            msg: "invalid regular expression".into(),
+            span: s.span,
+        }.into())
+    }
+}
+
+struct GrokFilter {
+    config: Config,
 }
 
 impl Filter for GrokFilter {
     fn start(self: Box<Self>) -> BoxFuture<Started, Error> {
         Box::new(future::ok(Started {
             instance: Arc::new(GrokInstance {
-                patterns: self.patterns,
+                patterns: self.config.patterns,
             }),
         }))
     }

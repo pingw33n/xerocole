@@ -29,7 +29,6 @@ mod util;
 mod value;
 
 use futures::prelude::*;
-use onig::Regex;
 use std::sync::Arc;
 
 use component::*;
@@ -63,11 +62,13 @@ fn main() {
     let mut ppl_builder = pipeline::PipelineBuilder::new(metrics.clone());
     ppl_builder
         .input(None, input)
-        .filter(Box::new(component::filter::grok::GrokFilter {
-            patterns: vec![
-                ("message".into(), vec![Regex::new(r#"(?<controller>[^#]+)#(?<action>\w+)"#).unwrap()]),
-            ],
-        }))
+        .filter(component::registry().filter("grok").unwrap().new(
+            value!{{
+                "match" => {
+                    "message" => r#"(?<controller>[^#]+)#(?<action>\w+)"#,
+                }
+            }}.into(),
+            Default::default()).unwrap())
         .output(component::registry().output("stdout").unwrap().new(
             value!{{}}.into(),
             component::output::CommonConfig { id: "stdout".into(),
