@@ -29,5 +29,5 @@ pub trait InputProvider: Provider {
 }
 
 pub trait Input: Node {
-    fn start(self: Box<Self>) -> BoxFuture<Started, Error>;
+    fn start(&self) -> BoxFuture<Started, Error>;
 }

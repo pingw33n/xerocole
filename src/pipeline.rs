@@ -2,12 +2,15 @@ use futures::prelude::*;
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::sync::mpsc;
 use futures_mpmc::{array as mpmc};
+use futures_retry::{FutureRetry, StreamRetryExt};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::executor;
 
 use component::input::Input;
 use component::filter::Filter;
 use component::output::Output;
+use error::*;
 use event::Event;
 use metric::{self, Metrics};
 use util::futures::*;
@@ -102,18 +105,28 @@ impl PipelineBuilder {
             let InputInfo { id, input } = input;
             let name = input.provider_metadata().name;
             let out_metric_name = format!("input.{}.out", id.clone());
-            metrics.set(out_metric_name.clone(), metric::Value::Counter(metric::Number::Int(0)));
-            executor::spawn(input.start()
-                .inspect(move |_| info!("started input {} ({})", id, name))
+            metrics.set(out_metric_name.clone(), metric::Value::Counter(0.into()));
+
+            let started = FutureRetry::new(clone!(id => move || {
+                    info!("[{}] starting input", id);
+                    input.start()
+                }),
+                RetryErrorHandler::new(None, Duration::from_secs(1), Duration::from_secs(60),
+                    id.clone(), "starting input"));
+
+            executor::spawn(started
+                .inspect(clone!(id, name => move |_| info!("started input {} ({})", id, name)))
                 // TODO handle input start failures.
                 .inspect_err(|e| error!("input start error: {:?}", e))
                 .map(|i| i.stream)
                 .flatten_stream()
+                .retry(RetryErrorHandler::new(None, Duration::from_secs(1), Duration::from_secs(60),
+                    id.clone(), "fetching input event"))
                 .map_err(|e| error!("input stream error: {:?}", e))
                 .inspect(clone!(metrics => move |_| metrics.inc(&out_metric_name, 1)))
                 .forward(in_queue_tx.clone()
                     .sink_map_err(|e| error!("in_queue_rx gone: {:?}", e)))
-                .map(|_| {})
+                .map(clone!(id, name => move |_| info!("finished input {} ({})", id, name)))
                 .map_err(|e| error!("uncaught error: {:?}", e)));
         }
     }

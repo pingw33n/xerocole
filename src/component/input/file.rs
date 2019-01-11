@@ -41,24 +41,26 @@ impl super::super::Provider for Provider {
 impl InputProvider for Provider {
     fn new(&self, ctx: New) -> Result<Box<Input>> {
         Ok(Box::new(FileInput {
-            config: Config::parse(ctx.config)?,
-            common_config: ctx.common_config,
+            config: Config::parse(ctx.config, ctx.common_config)?,
         }))
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 enum StartFrom {
     Beginning,
     End,
 }
 
+#[derive(Clone)]
 struct Config {
     path_patterns: Vec<String>,
     start_from: StartFrom,
+    codec: Arc<Codec>,
 }
 
 impl Config {
-    fn parse(mut value: Spanned<Value>) -> Result<Self> {
+    fn parse(mut value: Spanned<Value>, common: CommonConfig) -> Result<Self> {
         let path_pattern_strs = value.remove("path")?.into_list()?;
         let mut path_patterns = Vec::new();
         for p in path_pattern_strs {
@@ -82,13 +84,13 @@ impl Config {
         Ok(Self {
             path_patterns,
             start_from,
+            codec: common.codec.unwrap(),
         })
     }
 }
 
 struct FileInput {
     config: Config,
-    common_config: CommonConfig,
 }
 
 impl Node for FileInput {
@@ -99,12 +101,11 @@ impl Node for FileInput {
 }
 
 impl Input for FileInput {
-    fn start(self: Box<Self>) -> BoxFuture<Started, Error> {
+    fn start(&self) -> BoxFuture<Started, Error> {
         let state = Arc::new(Mutex::new(State::new()));
 
-        let this = *self;
-        let mut codec = this.common_config.codec.unwrap();
-        let path_patterns = this.config.path_patterns;
+        let codec = self.config.codec.clone();
+        let path_patterns = self.config.path_patterns.clone();
 
         let (shutdown_tx, shutdown_rx) = signal::signal();
         let (trigger_tx, trigger_rx) = pulse::pulse();
