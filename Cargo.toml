@@ -7,7 +7,7 @@ license = "MIT"
 [dependencies]
 env_logger = "0.6"
 futures = "0.1"
-futures-mpmc = { path = "../futures-mpmc" }
+futures-mpmc = "0.1"
 futures-retry = "0.3"
 glob = "0.2"
 humantime = "1.2"
