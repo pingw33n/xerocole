@@ -22,29 +22,48 @@ impl super::super::Provider for Provider {
 }
 
 impl OutputProvider for Provider {
-    fn new(&self, _ctx: New) -> Result<Box<Output>> {
-        Ok(Box::new(StdoutOutput))
-    }
-}
-
-struct StdoutOutput;
-
-impl Output for StdoutOutput {
-    fn start(self: Box<Self>) -> BoxFuture<Started, Error> {
-        Box::new(future::ok(Started {
-            sink: Box::new(StdoutSink),
+    fn new(&self, ctx: New) -> Result<Box<Output>> {
+        let codec = if let Some(codec) = ctx.common_config.codec {
+            codec
+        } else {
+            registry().codec("debug").unwrap().new(codec::New { config: value!{{}}.into() })?
+        };
+        Ok(Box::new(StdoutOutput {
+            config: Config { codec },
         }))
     }
 }
 
-struct StdoutSink;
+struct Config {
+    codec: Arc<Codec>,
+}
+
+struct StdoutOutput {
+    config: Config,
+}
+
+impl Output for StdoutOutput {
+    fn start(self: Box<Self>) -> BoxFuture<Started, Error> {
+        Box::new(future::ok(Started {
+            sink: Box::new(StdoutSink {
+                config: self.config,
+            }),
+        }))
+    }
+}
+
+struct StdoutSink {
+    config: Config,
+}
 
 impl Sink for StdoutSink {
     type SinkItem = Event;
     type SinkError = Error;
 
     fn start_send(&mut self, event: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-        println!("{:#?}", event);
+        let s = self.config.codec.encode_as_string(&event)?;
+        // TODO asynchronously write to stdout
+        println!("{}", s);
         Ok(AsyncSink::Ready)
     }
 

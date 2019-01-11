@@ -79,11 +79,7 @@ fn main() {
         }).unwrap())
         .output(component::registry().output("stdout").unwrap().new(output::New {
             config: value! {{}}.into(),
-            common_config: output::CommonConfig {
-                codec: Some(component::registry().codec("plain").unwrap().new(
-                    codec::New { config: value! {{}}.into() }).unwrap()),
-                ..Default::default()
-            }
+            common_config: Default::default()
         }).unwrap())
         .output(component::registry().output("null").unwrap().new(output::New {
             config: value! {{}}.into(),
