@@ -172,7 +172,7 @@ impl PipelineBuilder {
                             .map_err(|e| error!("filter error: {:?}", e))
                             .forward(out_queue_tx.clone()
                                 .sink_map_err(|e| error!("error sending to out_queue: {:?}", e)))
-                            .map(move |_| println!("filter task {} done", i))
+                            .map(move |_| debug!("filter task {} done", i))
                         );
                     }
                     Ok(())
