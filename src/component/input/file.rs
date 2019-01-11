@@ -248,13 +248,20 @@ impl Input for FileInput {
                 }
                 Ok(stream::iter_ok(events))
             }))
-            .map_err(clone!(state => move |e| {
-                let mut state = state.lock().unwrap();
-                state.cur_file_idx += 1;
-                if state.cur_file_idx < state.files.len() {
-                    trigger_tx.signal();
+            .then(clone!(state => move |r| {
+                match r {
+                    r @ Ok(_) => r,
+                    Err(e) => {
+                        let mut state = state.lock().unwrap();
+                        warn!("processing file {:?} failed: {:?}",
+                            state.files[state.cur_file_idx].path, e);
+                        state.cur_file_idx += 1;
+                        if state.cur_file_idx < state.files.len() {
+                            trigger_tx.signal();
+                        }
+                        Ok(stream::iter_ok(Vec::new()))
+                    }
                 }
-                e
             }))
             .flatten()
         );
