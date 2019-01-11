@@ -139,7 +139,9 @@ lazy_static! {
 
         r.register_input(input::file::Provider);
 
+        r.register_codec(codec::debug::Provider);
         r.register_codec(codec::plain::Provider);
+
         r.register_output(output::null::Provider);
         r.register_output(output::stdout::Provider);
 
