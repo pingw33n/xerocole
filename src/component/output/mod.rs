@@ -2,6 +2,7 @@ pub mod null;
 pub mod stdout;
 
 use futures::sink::BoxSink;
+use std::sync::Arc;
 
 use super::*;
 use component::codec::Codec;
@@ -12,7 +13,7 @@ use util::futures::BoxFuture;
 #[derive(Default)]
 pub struct CommonConfig {
     pub id: Option<String>,
-    pub codec: Option<Box<Codec>>,
+    pub codec: Option<Arc<Codec>>,
 }
 
 pub struct New {

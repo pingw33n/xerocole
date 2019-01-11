@@ -1,5 +1,7 @@
 pub mod file;
 
+use std::sync::Arc;
+
 use super::*;
 use component::codec::Codec;
 use error::Error;
@@ -9,7 +11,7 @@ use util::futures::*;
 #[derive(Default)]
 pub struct CommonConfig {
     pub id: Option<String>,
-    pub codec: Option<Box<Codec>>,
+    pub codec: Option<Arc<Codec>>,
 }
 
 pub struct New {

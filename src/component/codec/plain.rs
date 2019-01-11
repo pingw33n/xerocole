@@ -19,18 +19,18 @@ impl super::super::Provider for Provider {
 }
 
 impl CodecProvider for Provider {
-    fn new(&self, ctx: New) -> Result<Box<Codec>> {
+    fn new(&self, ctx: New) -> Result<Arc<Codec>> {
         let charset = ctx.config.get_opt_str("charset")?.unwrap_or("UTF-8");
         // FIXME
         assert!(charset.eq_ignore_ascii_case("UTF-8"));
-        Ok(Box::new(PlainCodec))
+        Ok(Arc::new(PlainCodec))
     }
 }
 
 struct PlainCodec;
 
 impl Codec for PlainCodec {
-    fn decode(&mut self, buf: &[u8]) -> Result<Vec<Event>> {
+    fn decode(&self, buf: &[u8]) -> Result<Vec<Event>> {
         let mut event = Event::new();
         event.fields_mut().insert("message".into(),
             Value::String(String::from_utf8_lossy(buf).into()));
@@ -38,7 +38,7 @@ impl Codec for PlainCodec {
         Ok(vec![event])
     }
 
-    fn encode_as_string(&mut self, _event: &Event) -> Result<String> {
+    fn encode_as_string(&self, _event: &Event) -> Result<String> {
         unimplemented!();
     }
 }
