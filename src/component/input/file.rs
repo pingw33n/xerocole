@@ -153,6 +153,10 @@ impl Input for FileInput {
 
                 Ok(())
             }))
+            .inspect_err(clone!(shutdown_tx => move |_| {
+                error!("discovery task failed, shutting down the file input");
+                shutdown_tx.signal()
+            }))
         );
 
         let stream: BoxStream<Event, Error> = Box::new(
