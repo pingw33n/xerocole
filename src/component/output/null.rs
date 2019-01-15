@@ -30,7 +30,7 @@ impl OutputProvider for Provider {
 struct NullOutput;
 
 impl Output for NullOutput {
-    fn start(self: Box<Self>) -> BoxFuture<Started, Error> {
+    fn start(&self) -> BoxFuture<Started, Error> {
         Box::new(future::ok(Started {
             sink: Box::new(NullSink),
         }))

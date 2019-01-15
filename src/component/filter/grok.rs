@@ -32,8 +32,41 @@ impl FilterProvider for Provider {
     }
 }
 
+struct CloneableRegex {
+    regex: Regex,
+    pattern: String,
+}
+
+impl CloneableRegex {
+    pub fn new(pattern: impl Into<String>) -> ::std::result::Result<Self, onig::Error> {
+        let pattern = pattern.into();
+        Ok(Self {
+            regex: Regex::new(&pattern)?,
+            pattern,
+        })
+    }
+}
+
+impl Clone for CloneableRegex {
+    fn clone(&self) -> Self {
+        Self {
+            regex: Regex::new(&self.pattern).unwrap(),
+            pattern: self.pattern.clone(),
+        }
+    }
+}
+
+impl ::std::ops::Deref for CloneableRegex {
+    type Target = Regex;
+
+    fn deref(&self) -> &Self::Target {
+        &self.regex
+    }
+}
+
+#[derive(Clone)]
 struct Config {
-    patterns: Vec<(String, Vec<Regex>)>,
+    patterns: Vec<(String, Vec<CloneableRegex>)>,
 }
 
 impl Config {
@@ -61,8 +94,8 @@ impl Config {
         })
     }
 
-    fn parse_regex(s: Spanned<Value>) -> Result<Regex> {
-        Regex::new(s.as_str()?).map_err(move |_| ValueError {
+    fn parse_regex(s: Spanned<Value>) -> Result<CloneableRegex> {
+        CloneableRegex::new(s.as_str()?).map_err(move |_| ValueError {
             msg: "invalid regular expression".into(),
             span: s.span,
         }.into())
@@ -74,23 +107,23 @@ struct GrokFilter {
 }
 
 impl Filter for GrokFilter {
-    fn start(self: Box<Self>) -> BoxFuture<Started, Error> {
+    fn start(&self) -> BoxFuture<Started, Error> {
         Box::new(future::ok(Started {
             instance: Arc::new(GrokInstance {
-                patterns: self.config.patterns,
+                config: self.config.clone(),
             }),
         }))
     }
 }
 
 struct GrokInstance {
-    patterns: Vec<(String, Vec<Regex>)>,
+    config: Config,
 }
 
 impl Instance for GrokInstance {
-    fn filter(&self, mut event: Event) -> BoxFuture<BoxStream<Event, Error>, Error> {
+    fn filter(&self, mut event: Event) -> BoxStream<Event, Error> {
         let mut new_fields = Vec::new();
-        for &(ref field, ref regexes) in &self.patterns {
+        for &(ref field, ref regexes) in &self.config.patterns {
             let value = event.fields().get(field).and_then(|v| v.as_string().ok());
             if let Some(value) = value {
                 for regex in regexes {
@@ -109,6 +142,6 @@ impl Instance for GrokInstance {
             event.fields_mut().entry(n)
                 .or_insert_with(|| Value::String(v));
         }
-        Box::new(future::ok(Box::new(stream::once(Ok(event))) as BoxStream<_, _>))
+        Box::new(stream::once(Ok(event)))
     }
 }

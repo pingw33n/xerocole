@@ -26,10 +26,10 @@ pub trait FilterProvider: Provider {
     fn new(&self, ctx: New) -> Result<Box<Filter>>;
 }
 
-pub trait Filter: Send + 'static {
-    fn start(self: Box<Self>) -> BoxFuture<Started, Error>;
+pub trait Filter: 'static + Send {
+    fn start(&self) -> BoxFuture<Started, Error>;
 }
 
-pub trait Instance: Send + Sync + 'static {
-    fn filter(&self, event: Event) -> BoxFuture<BoxStream<Event, Error>, Error>;
+pub trait Instance: 'static + Send + Sync {
+    fn filter(&self, event: Event) -> BoxStream<Event, Error>;
 }

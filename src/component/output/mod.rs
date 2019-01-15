@@ -29,6 +29,6 @@ pub trait OutputProvider: Provider {
     fn new(&self, ctx: New) -> Result<Box<Output>>;
 }
 
-pub trait Output: Send + 'static {
-    fn start(self: Box<Self>) -> BoxFuture<Started, Error>;
+pub trait Output: 'static + Send + Sync {
+    fn start(&self) -> BoxFuture<Started, Error>;
 }

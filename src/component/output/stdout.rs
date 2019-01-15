@@ -34,19 +34,21 @@ impl OutputProvider for Provider {
     }
 }
 
+#[derive(Clone)]
 struct Config {
     codec: Arc<Codec>,
 }
 
+#[derive(Clone)]
 struct StdoutOutput {
     config: Config,
 }
 
 impl Output for StdoutOutput {
-    fn start(self: Box<Self>) -> BoxFuture<Started, Error> {
+    fn start(&self) -> BoxFuture<Started, Error> {
         Box::new(future::ok(Started {
             sink: Box::new(StdoutSink {
-                config: self.config,
+                config: self.config.clone(),
             }),
         }))
     }
