@@ -69,22 +69,25 @@ fn main() {
     let mut ppl_builder = pipeline::PipelineBuilder::new(metrics.clone());
     ppl_builder
         .input(None, input)
-        .filter(component::registry().filter("grok").unwrap().new(filter::New {
-            config: value!{{
-                "match" => {
-                    "message" => r#"(?<controller>[^#]+)#(?<action>\w+)"#,
-                }
-            }}.into(),
-            common_config: Default::default()
-        }).unwrap())
-        .output(component::registry().output("stdout").unwrap().new(output::New {
-            config: value! {{}}.into(),
-            common_config: Default::default()
-        }).unwrap())
-        .output(component::registry().output("null").unwrap().new(output::New {
-            config: value! {{}}.into(),
-            common_config: Default::default(),
-        }).unwrap())
+        .graph(pipeline::Node::Filters((
+                vec![component::registry().filter("grok").unwrap().new(filter::New {
+                        config: value!{{
+                            "match" => {
+                                "message" => r#"(?<controller>[^#]+)#(?<action>\w+)"#,
+                            }
+                        }}.into(),
+                        common_config: Default::default()
+                    }).unwrap()],
+                Box::new(pipeline::Node::Outputs(vec![
+                    component::registry().output("stdout").unwrap().new(output::New {
+                        config: value! {{}}.into(),
+                        common_config: Default::default()
+                    }).unwrap(),
+                    component::registry().output("null").unwrap().new(output::New {
+                        config: value! {{}}.into(),
+                        common_config: Default::default(),
+                    }).unwrap(),
+                ])))))
     ;
 
     let tp_size = num_cpus::get();
