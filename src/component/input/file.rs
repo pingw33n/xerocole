@@ -93,7 +93,7 @@ struct FileInput {
     config: Config,
 }
 
-impl Node for FileInput {
+impl Component for FileInput {
     fn provider_metadata(&self) -> Metadata {
         use super::super::{Provider as P};
         Provider.metadata()

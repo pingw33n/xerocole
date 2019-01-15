@@ -28,6 +28,6 @@ pub trait InputProvider: Provider {
     fn new(&self, ctx: New) -> Result<Box<Input>>;
 }
 
-pub trait Input: Node {
+pub trait Input: Component {
     fn start(&self) -> BoxFuture<Started, Error>;
 }

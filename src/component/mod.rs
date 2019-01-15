@@ -16,7 +16,7 @@ pub trait Provider: Send + Sync {
     fn metadata(&self) -> Metadata;
 }
 
-pub trait Node: Send {
+pub trait Component: Send {
     fn provider_metadata(&self) -> Metadata;
 }
 
