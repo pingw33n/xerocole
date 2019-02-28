@@ -74,16 +74,7 @@ fn main() {
                 ])))))
     ;
 
-    let tp_size = num_cpus::get();
-
-    let mut tp_builder = tokio_threadpool::Builder::new();
-    tp_builder.name_prefix("core-")
-        .pool_size(tp_size);
-
-    let mut rt_builder = tokio::runtime::Builder::new();
-    rt_builder.threadpool_builder(tp_builder);
-
-    let mut rt = rt_builder.build().unwrap();
+    let mut rt = tokio::runtime::Runtime::new().unwrap();
 
     rt.spawn(Interval::new(Instant::now(), Duration::from_secs(5))
         .map_err(|e| error!("{}", e))
