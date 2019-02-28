@@ -1,9 +1,43 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::{Deref, DerefMut, Range};
+
+use crate::error::*;
 
 pub type List = Vec<Spanned<Value>>;
 pub type Map = HashMap<String, Spanned<Value>>;
 pub type Span = Range<u32>;
+
+type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug)]
+pub struct ErrorDetails {
+    pub msg: Cow<'static, str>,
+    pub span: Span,
+}
+
+impl ErrorDetails {
+    pub fn new(msg: impl Into<Cow<'static, str>>, span: Span) -> Self {
+        Self {
+            msg: msg.into(),
+            span,
+        }
+    }
+
+    pub fn at(self, span: Span) -> Self {
+        Self {
+            msg: self.msg,
+            span,
+        }
+    }
+}
+
+impl fmt::Display for ErrorDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[{}..{}] {}", self.span.start, self.span.end, self.msg)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Spanned<T> {
@@ -12,11 +46,8 @@ pub struct Spanned<T> {
 }
 
 impl<T> Spanned<T> {
-    pub fn new_error(&self, msg: impl Into<String>) -> ValueError {
-        ValueError {
-            msg: msg.into(),
-            span: self.span.clone(),
-        }
+    pub fn new_error(&self, msg: impl Into<Cow<'static, str>>) -> Error {
+        Error::new(ErrorId::Parse, ErrorDetails::new(msg, self.span.clone()))
     }
 }
 
@@ -44,39 +75,35 @@ impl<T> DerefMut for Spanned<T> {
 }
 
 impl Spanned<Value> {
-    pub fn as_str(&self) -> Result<&str, ValueError> {
+    pub fn as_str(&self) -> Result<&str> {
         self.as_string().map(|s| s.as_str())
     }
 
-    pub fn get_opt(&self, key: &str) -> Result<Option<&Spanned<Value>>, ValueError> {
+    pub fn get_opt(&self, key: &str) -> Result<Option<&Spanned<Value>>> {
         Ok(self.as_map()?.get(key))
     }
 
-    pub fn get_opt_str(&self, key: &str) -> Result<Option<&str>, ValueError> {
+    pub fn get_opt_str(&self, key: &str) -> Result<Option<&str>> {
         Ok(self.get_opt_string(key)?.map(|s| s.as_str()))
     }
 
-    pub fn get(&self, key: &str) -> Result<&Spanned<Value>, ValueError> {
+    pub fn get(&self, key: &str) -> Result<&Spanned<Value>> {
         match self.get_opt(key)? {
             Some(v) => Ok(v),
-            None => Err(ValueError {
-                msg: format!("Map must specify required key `{}`", key),
-                span: self.span.clone(),
-            }),
+            None => Err(ErrorDetails::new(format!("Map must specify required key `{}`", key),
+                self.span.clone()).wrap_id(ErrorId::Parse)),
         }
     }
 
-    pub fn remove_opt(&mut self, key: &str) -> Result<Option<Spanned<Value>>, ValueError> {
+    pub fn remove_opt(&mut self, key: &str) -> Result<Option<Spanned<Value>>> {
         Ok(self.as_map_mut()?.remove(key))
     }
 
-    pub fn remove(&mut self, key: &str) -> Result<Spanned<Value>, ValueError> {
+    pub fn remove(&mut self, key: &str) -> Result<Spanned<Value>> {
         match self.remove_opt(key)? {
             Some(v) => Ok(v),
-            None => Err(ValueError {
-                msg: format!("Map must specify required key `{}`", key),
-                span: self.span.clone(),
-            }),
+            None => Err(ErrorDetails::new(format!("Map must specify required key `{}`", key),
+                self.span.clone()).wrap_id(ErrorId::Parse)),
         }
     }
 }
@@ -100,36 +127,19 @@ impl From<HashMap<String, Value>> for Spanned<Value> {
 }
 
 impl Value {
-    pub fn get_opt(&self, key: &str) -> Result<Option<&Spanned<Value>>, ValueError> {
+    pub fn get_opt(&self, key: &str) -> Result<Option<&Spanned<Value>>> {
         Ok(self.as_map()?.get(key))
     }
 
-    pub fn get_opt_str(&self, key: &str) -> Result<Option<&str>, ValueError> {
+    pub fn get_opt_str(&self, key: &str) -> Result<Option<&str>> {
         Ok(self.get_opt_string(key)?.map(|s| s.as_str()))
     }
 
-    pub fn get(&self, key: &str) -> Result<&Spanned<Value>, ValueError> {
+    pub fn get(&self, key: &str) -> Result<&Spanned<Value>> {
         match self.get_opt(key)? {
             Some(v) => Ok(v),
-            None => Err(ValueError {
-                msg: format!("Map must specify required key `{}`", key),
-                span: 0..0,
-            }),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ValueError {
-    pub msg: String,
-    pub span: Span,
-}
-
-impl ValueError {
-    pub fn at(self, span: Span) -> Self {
-        Self {
-            msg: self.msg,
-            span,
+            None => Err(ErrorDetails::new(format!("Map must specify required key `{}`", key),
+                0..0).wrap_id(ErrorId::Parse)),
         }
     }
 }
@@ -157,7 +167,7 @@ impl Value {
         }
     }
 
-    pub fn as_str(&self) -> Result<&str, ValueError> {
+    pub fn as_str(&self) -> Result<&str> {
         self.as_string().map(|s| s.as_str())
     }
 }
@@ -185,41 +195,37 @@ macro_rules! impl_bits {
             $into_vari:ident,
             $get_opt_vari:ident;)+ }) => {$(
         impl $val {
-            pub fn $into_vari(self) -> Result<$ty, ValueError> {
-                let kind = self.kind();
+            pub fn $into_vari(self) -> Result<$ty> {
                 if let $val :: $vari ( v ) = self {
                     Ok(v)
                 } else {
-                    Err(ValueError {
-                        msg: format!(concat!(stringify!($vari), " value expected but {:?} found"), kind),
-                        span: 0..0,
-                    })
+                    Err(ErrorDetails::new(
+                        format!(concat!(stringify!($vari), " value expected but {:?} found"), self.kind()),
+                        0..0).wrap_id(ErrorId::Parse))
                 }
             }
 
-            pub fn $as_vari(&self) -> Result<& $ty, ValueError> {
+            pub fn $as_vari(&self) -> Result<& $ty> {
                 if let $val :: $vari ( v ) = self {
                     Ok(v)
                 } else {
-                    Err(ValueError {
-                        msg: format!(concat!(stringify!($vari), " value expected but {:?} found"), self.kind()),
-                        span: 0..0,
-                    })
+                    Err(ErrorDetails::new(
+                        format!(concat!(stringify!($vari), " value expected but {:?} found"), self.kind()),
+                        0..0).wrap_id(ErrorId::Parse))
                 }
             }
 
-            pub fn $as_vari_mut(&mut self) -> Result<&mut $ty, ValueError> {
+            pub fn $as_vari_mut(&mut self) -> Result<&mut $ty> {
                 if let $val :: $vari ( v ) = self {
                     Ok(v)
                 } else {
-                    Err(ValueError {
-                        msg: format!(concat!(stringify!($vari), " value expected but {:?} found"), self.kind()),
-                        span: 0..0,
-                    })
+                    Err(ErrorDetails::new(
+                        format!(concat!(stringify!($vari), " value expected but {:?} found"), self.kind()),
+                        0..0).wrap_id(ErrorId::Parse))
                 }
             }
 
-            pub fn $get_opt_vari(&self, key: &str) -> Result<Option<& $ty>, ValueError> {
+            pub fn $get_opt_vari(&self, key: &str) -> Result<Option<& $ty>> {
                 Ok(match self.get_opt(key)? {
                     Some(v) => Some(v.$as_vari()?),
                     None => None,
@@ -229,23 +235,26 @@ macro_rules! impl_bits {
         }
 
         impl Spanned<$val> {
-            pub fn $into_vari(self) -> Result<$ty, ValueError> {
+            pub fn $into_vari(self) -> Result<$ty> {
                 let span = self.span;
-                self.value.$into_vari().map_err(move |e| e.at(span))
+                self.value.$into_vari().map_err(move |e|
+                    e.map_details(|d| d.downcast::<ErrorDetails>().unwrap().at(span)))
             }
 
-            pub fn $as_vari(&self) -> Result<& $ty, ValueError> {
-                self.value.$as_vari().map_err(move |e| e.at(self.span.clone()))
+            pub fn $as_vari(&self) -> Result<& $ty> {
+                self.value.$as_vari().map_err(move |e|
+                    e.map_details(|d| d.downcast::<ErrorDetails>().unwrap().at(self.span.clone())))
             }
 
-            pub fn $as_vari_mut(&mut self) -> Result<&mut $ty, ValueError> {
+            pub fn $as_vari_mut(&mut self) -> Result<&mut $ty> {
+                let span = self.span.clone();
                 match self.value.$as_vari_mut() {
                     Ok(v) => Ok(v),
-                    Err(e) => Err(e.at(self.span.clone())),
+                    Err(e) => Err(e.map_details(|d| d.downcast::<ErrorDetails>().unwrap().at(span))),
                 }
             }
 
-            pub fn $get_opt_vari(&self, key: &str) -> Result<Option<& $ty>, ValueError> {
+            pub fn $get_opt_vari(&self, key: &str) -> Result<Option<& $ty>> {
                 Ok(match self.get_opt(key)? {
                     Some(v) => Some(v.$as_vari()?),
                     None => None,

@@ -1,30 +1,17 @@
-use std::io;
+pub use failure_derive::Fail;
+pub use crate::util::error::{ErrorExt, ResultExt, ResultErrorExt};
 
-use crate::value::ValueError;
+pub type Error = crate::util::error::Error<ErrorId>;
+pub type Result<T> = std::result::Result<T, Error>;
 
-pub type Result<T> = ::std::result::Result<T, Error>;
+#[derive(Clone, Copy, Debug, Eq, Fail, PartialEq)]
+pub enum ErrorId {
+    #[fail(display = "IO error")]
+    Io,
 
-#[derive(Debug)]
-pub enum Error {
-    Io(io::Error),
-    ValueError(ValueError),
-    Generic(&'static str),
-}
+    #[fail(display = "Parse error")]
+    Parse,
 
-impl From<io::Error> for Error {
-    fn from(v: io::Error) -> Self {
-        Error::Io(v)
-    }
-}
-
-impl From<ValueError> for Error {
-    fn from(v: ValueError) -> Self {
-        Error::ValueError(v)
-    }
-}
-
-impl From<&'static str> for Error {
-    fn from(v: &'static str) -> Self {
-        Error::Generic(v)
-    }
+    #[fail(display = "Unknown error")]
+    Unknown,
 }

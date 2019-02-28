@@ -75,10 +75,8 @@ impl Config {
             match s.as_str()? {
                 "beginning" => StartFrom::Beginning,
                 "end" => StartFrom::End,
-                _ => return Err(Error::ValueError(ValueError {
-                    msg: "expected one of [\"beginning\", \"end\"]".into(),
-                    span: s.span.clone(),
-                })),
+                _ => return Err(ErrorDetails::new("expected one of [\"beginning\", \"end\"]", s.span.clone()))
+                    .wrap_err_id(ErrorId::Parse),
             }
         } else {
             StartFrom::Beginning
@@ -166,7 +164,7 @@ impl Input for FileInput {
         let stream: BoxStream<Event, Error> = Box::new(
                 Interval::new(Instant::now() + Duration::from_millis(1000), Duration::from_secs(5))
             .map(|_| {})
-            .map_err(|_| Error::Generic("timer"))
+            .map_err(|e| e.wrap_id(ErrorId::Unknown))
             .select(trigger_rx.infallible())
             .take_until(shutdown_rx.clone())
             .and_then(clone!(state => move |_| {
@@ -183,10 +181,10 @@ impl Input for FileInput {
 
                 if file.file.is_none() {
                     debug!("opening file: {:?}", file.path);
-                    file.file = Some(File::open(&file.path)?);
+                    file.file = Some(File::open(&file.path).wrap_err_id(ErrorId::Io)?);
                 }
 
-                file.len = file.file.as_ref().unwrap().metadata()?.len();
+                file.len = file.file.as_ref().unwrap().metadata().wrap_err_id(ErrorId::Io)?.len();
 
                 Ok(true)
             }))
@@ -213,7 +211,7 @@ impl Input for FileInput {
                             Err(e) => {
                                 error!("error reading file {}: {}",
                                     file.path.to_str().unwrap_or("?"), e);
-                                return Err(e.into());
+                                return Err(e.wrap_id(ErrorId::Io));
                             }
                         };
                         file.buf.truncate(len + read);

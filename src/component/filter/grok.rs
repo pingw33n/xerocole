@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::*;
 use super::super::*;
-use crate::error::Error;
+use crate::error::*;
 use crate::event::*;
 use crate::util::futures::{BoxFuture, BoxStream};
 use crate::value::*;
@@ -95,10 +95,8 @@ impl Config {
     }
 
     fn parse_regex(s: Spanned<Value>) -> Result<CloneableRegex> {
-        CloneableRegex::new(s.as_str()?).map_err(move |_| ValueError {
-            msg: "invalid regular expression".into(),
-            span: s.span,
-        }.into())
+        CloneableRegex::new(s.as_str()?)
+            .map_err(move |_| s.new_error("invalid regular expression"))
     }
 }
 
