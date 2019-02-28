@@ -3,6 +3,7 @@ name = "xerocole"
 version = "0.1.0"
 authors = ["Dmytro Lysai <d@emphased.net>"]
 license = "MIT"
+edition = "2018"
 
 [dependencies]
 env_logger = "0.6"
@@ -12,7 +13,6 @@ futures-retry = "0.3"
 glob = "0.2"
 humantime = "1.2"
 if_chain = "0.1"
-icecream = "0.1"
 lazy_static = "1.1"
 libc = "0.2"
 log = "0.4"

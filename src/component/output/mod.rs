@@ -5,10 +5,10 @@ use futures::sink::BoxSink;
 use std::sync::Arc;
 
 use super::*;
-use component::codec::Codec;
-use error::Error;
-use event::*;
-use util::futures::BoxFuture;
+use crate::component::codec::Codec;
+use crate::error::Error;
+use crate::event::*;
+use crate::util::futures::BoxFuture;
 
 #[derive(Default)]
 pub struct CommonConfig {

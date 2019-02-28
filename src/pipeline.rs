@@ -4,17 +4,18 @@ use futures::stream::futures_unordered::FuturesUnordered;
 use futures::sync::mpsc;
 use futures_mpmc::{array as mpmc};
 use futures_retry::{FutureRetry, StreamRetryExt};
+use log::*;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::executor;
 
-use component::input::Input;
-use component::filter::{self, Filter};
-use component::output::Output;
-use error::*;
-use event::Event;
-use metric::{self, Metrics};
-use util::futures::*;
+use crate::component::input::Input;
+use crate::component::filter::{self, Filter};
+use crate::component::output::Output;
+use crate::error::*;
+use crate::event::Event;
+use crate::metric::{self, Metrics};
+use crate::util::futures::*;
 
 struct InputInfo {
     pub id: String,

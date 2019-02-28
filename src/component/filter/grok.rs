@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use super::*;
 use super::super::*;
-use error::Error;
-use event::*;
-use util::futures::{BoxFuture, BoxStream};
-use value::*;
+use crate::error::Error;
+use crate::event::*;
+use crate::util::futures::{BoxFuture, BoxStream};
+use crate::value::*;
 
 pub struct Provider;
 

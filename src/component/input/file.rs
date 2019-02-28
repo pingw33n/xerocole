@@ -2,6 +2,7 @@ use futures::prelude::*;
 use futures::{future, stream};
 use glob;
 use libc;
+use log::*;
 use memchr;
 use stream_cancel::{StreamExt as ScStreamExt};
 use std::cmp;
@@ -17,11 +18,12 @@ use tokio::executor;
 use tokio::timer::Interval;
 
 use super::*;
+use super::Metadata;
 use super::super::*;
-use error::*;
-use event::*;
-use util::futures::{*, stream::StreamExt};
-use value::*;
+use crate::error::*;
+use crate::event::*;
+use crate::util::futures::{*, stream::StreamExt};
+use crate::value::*;
 
 pub struct Provider;
 
@@ -66,7 +68,7 @@ impl Config {
         for p in path_pattern_strs {
             path_patterns.push(p.into_string()?);
         }
-        ic!(path_patterns);
+        dbg!(&path_patterns);
 
         let start_from = if let Some(s) = value.remove_opt("start_position")? {
             match s.as_str()? {

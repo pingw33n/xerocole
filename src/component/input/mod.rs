@@ -3,10 +3,10 @@ pub mod file;
 use std::sync::Arc;
 
 use super::*;
-use component::codec::Codec;
-use error::Error;
-use event::*;
-use util::futures::*;
+use crate::component::codec::Codec;
+use crate::error::Error;
+use crate::event::*;
+use crate::util::futures::*;
 
 #[derive(Default)]
 pub struct CommonConfig {

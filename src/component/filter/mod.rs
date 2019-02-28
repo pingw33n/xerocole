@@ -3,10 +3,10 @@ pub mod grok;
 use std::sync::Arc;
 
 use super::*;
-use error::Error;
-use event::*;
-use util::futures::{BoxFuture, BoxStream};
-use value::*;
+use crate::error::Error;
+use crate::event::*;
+use crate::util::futures::{BoxFuture, BoxStream};
+use crate::value::*;
 
 #[derive(Default)]
 pub struct CommonConfig {

@@ -1,6 +1,6 @@
 use super::*;
 use super::super::*;
-use event::*;
+use crate::event::*;
 
 pub struct Provider;
 

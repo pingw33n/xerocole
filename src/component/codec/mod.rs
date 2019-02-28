@@ -4,8 +4,8 @@ pub mod plain;
 use std::sync::Arc;
 
 use super::*;
-use error::*;
-use event::*;
+use crate::error::*;
+use crate::event::*;
 
 pub struct New {
     pub config: Spanned<Value>

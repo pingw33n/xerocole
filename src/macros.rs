@@ -197,7 +197,7 @@ macro_rules! value {
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
-    use value::*;
+    use crate::value::*;
 
     fn map(mut e: Vec<(&str, Spanned<Value>)>) -> Value {
         let mut r: Map = HashMap::new();

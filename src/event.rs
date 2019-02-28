@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use value::*;
+use crate::value::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Event {

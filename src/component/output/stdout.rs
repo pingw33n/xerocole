@@ -3,8 +3,8 @@ use futures::prelude::*;
 
 use super::*;
 use super::super::*;
-use event::*;
-use util::futures::BoxFuture;
+use crate::event::*;
+use crate::util::futures::BoxFuture;
 
 pub struct Provider;
 

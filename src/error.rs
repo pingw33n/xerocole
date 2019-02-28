@@ -1,10 +1,12 @@
 use humantime::format_duration;
+use if_chain::if_chain;
+use log::*;
 use std::cmp;
 use std::fmt;
 use std::io;
 use std::time::Duration;
 
-use value::ValueError;
+use crate::value::ValueError;
 use futures_retry::{ErrorHandler, RetryPolicy};
 
 pub type Result<T> = ::std::result::Result<T, Error>;

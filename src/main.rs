@@ -1,24 +1,7 @@
 #![allow(dead_code)]
-#![allow(proc_macro_derive_resolution_fallback)]
 #![deny(non_snake_case)]
-
-extern crate env_logger;
-extern crate futures_mpmc;
-extern crate futures_retry;
-extern crate glob;
-extern crate humantime;
-#[macro_use] extern crate icecream;
-#[macro_use] extern crate if_chain;
-#[macro_use] extern crate lazy_static;
-extern crate libc;
-#[macro_use] extern crate log;
-extern crate memchr;
-extern crate num_cpus;
-extern crate futures;
-extern crate onig;
-extern crate stream_cancel;
-extern crate tokio;
-extern crate tokio_threadpool;
+#![deny(unused_imports)]
+#![deny(unused_must_use)]
 
 #[macro_use]
 mod macros;
@@ -32,6 +15,7 @@ mod util;
 mod value;
 
 use futures::prelude::*;
+use log::*;
 use std::sync::Arc;
 
 use component::*;

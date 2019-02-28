@@ -3,14 +3,15 @@ pub mod filter;
 pub mod input;
 pub mod output;
 
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 
+use crate::error::*;
+use crate::value::*;
 use codec::CodecProvider;
-use error::*;
 use filter::FilterProvider;
 use input::InputProvider;
 use output::OutputProvider;
-use value::*;
 
 pub trait Provider: Send + Sync {
     fn metadata(&self) -> Metadata;
