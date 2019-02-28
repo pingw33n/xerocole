@@ -178,17 +178,16 @@ impl PipelineBuilder {
             executor::spawn(started
                 .inspect(clone!(id, name => move |_| info!("started input {} ({})", id, name)))
                 // TODO handle input start failures.
-                .inspect_err(|e| error!("input start error: {:?}", e))
-                .map(|i| i.stream)
+                .map_err(|e| error!("input start error: {:?}", e))
+                .map(clone!(id => move |i| i.stream
+                    .retry(RetryErrorHandler::new(None, Duration::from_secs(1), Duration::from_secs(60),
+                        id, "fetching input event"))
+                    .map_err(|e| error!("input stream error: {:?}", e))))
                 .flatten_stream()
-                .retry(RetryErrorHandler::new(None, Duration::from_secs(1), Duration::from_secs(60),
-                    id.clone(), "fetching input event"))
-                .map_err(|e| error!("input stream error: {:?}", e))
                 .inspect(clone!(metrics => move |_| metrics.inc(&out_metric_name, 1)))
                 .forward(in_queue_tx.clone()
                     .sink_map_err(|e| error!("in_queue_rx gone: {:?}", e)))
-                .map(clone!(id, name => move |_| info!("finished input {} ({})", id, name)))
-                .map_err(|e| error!("uncaught error: {:?}", e)));
+                .map(clone!(id, name => move |_| info!("finished input {} ({})", id, name))));
         }
     }
 
