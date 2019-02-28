@@ -11,6 +11,7 @@ mod event;
 mod component;
 mod metric;
 mod pipeline;
+mod retry;
 mod util;
 mod value;
 

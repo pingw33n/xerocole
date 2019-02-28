@@ -15,6 +15,7 @@ use crate::component::output::Output;
 use crate::error::*;
 use crate::event::Event;
 use crate::metric::{self, Metrics};
+use crate::retry::RetryErrorHandler;
 use crate::util::futures::*;
 
 struct InputInfo {
