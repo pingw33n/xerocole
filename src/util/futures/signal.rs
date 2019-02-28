@@ -1,6 +1,7 @@
 use futures::prelude::*;
 use futures::task::{self, Task};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub fn signal() -> (Sender, Receiver) {
@@ -90,21 +91,21 @@ impl<P: Poller> Signal<P> {
     }
 
     fn notify(&self) {
-        let mut tasks = self.waiting_receivers.lock().unwrap();
+        let mut tasks = self.waiting_receivers.lock();
         for task in tasks.drain(..) {
             task.notify();
         }
     }
 
     fn register(&self) {
-        let mut tasks = self.waiting_receivers.lock().unwrap();
+        let mut tasks = self.waiting_receivers.lock();
         if tasks.iter().all(|t| !t.will_notify_current()) {
             tasks.push(task::current());
         }
     }
 
     fn unregister(&self) {
-        let mut tasks = self.waiting_receivers.lock().unwrap();
+        let mut tasks = self.waiting_receivers.lock();
         tasks.retain(|t| !t.will_notify_current());
     }
 }

@@ -4,6 +4,7 @@ use glob;
 use libc;
 use log::*;
 use memchr;
+use parking_lot::Mutex;
 use stream_cancel::{StreamExt as ScStreamExt};
 use std::cmp;
 use std::collections::HashMap;
@@ -12,7 +13,7 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::mem;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::executor;
 use tokio::timer::Interval;
@@ -129,7 +130,7 @@ impl Input for FileInput {
 
                 if !discovered_files.is_empty() {
                     let mut trigger = false;
-                    let mut state = state.lock().unwrap();
+                    let mut state = state.lock();
                     for (path, id) in discovered_files {
                         let len = state.files.len();
                         let idx = *state.file_id_to_idx.entry(id).or_insert(len);
@@ -169,7 +170,7 @@ impl Input for FileInput {
             .select(trigger_rx.infallible())
             .take_until(shutdown_rx.clone())
             .and_then(clone!(state => move |_| {
-                let mut state = state.lock().unwrap();
+                let mut state = state.lock();
 
                 if state.files.is_empty() {
                     return Ok(false);
@@ -191,7 +192,7 @@ impl Input for FileInput {
             }))
             .filter(|&v| v)
             .and_then(clone!(state, trigger_tx => move |_| {
-                let mut state = state.lock().unwrap();
+                let mut state = state.lock();
                 let (events, done) = loop {
                     let i = state.cur_file_idx;
                     let file = &mut state.files[i];
@@ -255,7 +256,7 @@ impl Input for FileInput {
                 match r {
                     r @ Ok(_) => r,
                     Err(e) => {
-                        let mut state = state.lock().unwrap();
+                        let mut state = state.lock();
                         warn!("processing file {:?} failed: {:?}",
                             state.files[state.cur_file_idx].path, e);
                         state.cur_file_idx += 1;

@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Mutex;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Number {
@@ -39,7 +39,7 @@ impl Metrics {
     }
 
     pub fn set(&self, name: String, value: Value) {
-        self.values.lock().unwrap().insert(name, value);
+        self.values.lock().insert(name, value);
     }
 
     pub fn inc(&self, name: &str, delta: impl Into<Number>) {
@@ -48,7 +48,7 @@ impl Metrics {
             Number::Int(n) => assert!(n >= 0),
             Number::Float(n) => assert!(n >= 0.0),
         }
-        match self.values.lock().unwrap().get_mut(name).unwrap() {
+        match self.values.lock().get_mut(name).unwrap() {
             Value::Counter(n) => {
                 match delta {
                     Number::Int(d) => {
@@ -74,6 +74,6 @@ impl Metrics {
 
 impl fmt::Debug for Metrics {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:#?}", &*self.values.lock().unwrap())
+        write!(f, "{:#?}", &*self.values.lock())
     }
 }
