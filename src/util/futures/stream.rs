@@ -1,7 +1,15 @@
 use futures::prelude::*;
 use std::marker::PhantomData;
 
+pub type BoxStream<T, E> = Box<Stream<Item=T, Error=E> + Send + 'static>;
+
 pub trait StreamExt: Stream {
+    fn into_box(self) -> BoxStream<Self::Item, Self::Error>
+        where Self: Sized + Send + 'static
+    {
+        Box::new(self)
+    }
+
     fn infallible<E>(self) -> Infallible<Self, E>
             where Self: Sized {
         Infallible {
