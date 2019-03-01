@@ -4,7 +4,7 @@ use futures::prelude::*;
 use super::*;
 use super::super::*;
 use crate::event::*;
-use crate::util::futures::BoxFuture;
+use crate::util::futures::*;
 
 pub struct Provider;
 
@@ -64,9 +64,10 @@ impl Sink for StdoutSink {
 
     fn start_send(&mut self, event: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
         let s = self.config.codec.encode_as_string(&event)?;
-        // TODO asynchronously write to stdout
-        println!("{}", s);
-        Ok(AsyncSink::Ready)
+        Ok(match tokio_threadpool::blocking(move || println!("{}", s)).unwrap() {
+            Async::Ready(()) => AsyncSink::Ready,
+            Async::NotReady => AsyncSink::NotReady(event),
+        })
     }
 
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
