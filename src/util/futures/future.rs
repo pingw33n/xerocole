@@ -1,4 +1,5 @@
 use futures::prelude::*;
+use std::marker::PhantomData;
 
 pub type BoxFuture<T, E> = Box<Future<Item=T, Error=E> + Send + 'static>;
 
@@ -10,11 +11,21 @@ pub trait FutureExt: Future {
     }
 
     fn inspect_err<F>(self, f: F) -> InspectErr<Self, F>
-            where F: FnMut(&Self::Error),
-                  Self: Sized {
+        where F: FnMut(&Self::Error),
+              Self: Sized,
+    {
         InspectErr {
             future: self,
             f,
+        }
+    }
+
+    fn infallible<E>(self) -> Infallible<Self, E>
+        where Self: Sized,
+    {
+        Infallible {
+            future: self,
+            _ty: PhantomData,
         }
     }
 }
@@ -39,6 +50,22 @@ impl<U, F> Future for InspectErr<U, F>
                 (self.f)(&e);
                 e
             })
+    }
+}
+
+pub struct Infallible<F, E>{
+    future: F,
+    _ty: PhantomData<E>,
+}
+
+impl<F: Future, E> Future for Infallible<F, E> {
+    type Item = F::Item;
+    type Error = E;
+
+    fn poll(&mut self) -> Poll<F::Item, Self::Error> {
+        self.future.poll().map_err(|_| -> E {
+            panic!("infallible future failed");
+        })
     }
 }
 
