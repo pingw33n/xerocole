@@ -1,14 +1,12 @@
 use futures::prelude::*;
 use futures::{future, stream};
 use glob;
-use libc;
 use log::*;
 use memchr;
 use parking_lot::Mutex;
 use stream_cancel::{StreamExt as ScStreamExt};
 use std::cmp;
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::mem;
@@ -122,9 +120,9 @@ impl Input for FileInput {
                         debug!("discovering files in {}", path_pattern);
                         for path in try_cont!(glob::glob(path_pattern).map_err(|e| error!("{}", e))) {
                             let path = try_cont!(path.map_err(|e| error!("{}", e)));
-                            let id = try_cont!(file_id(&path)
-                                .map_err(|e| error!("couldn't get file id: {}", e)));
-                            discovered_files.push((path, id));
+                            let stat = try_cont!(stat(&path)
+                                .map_err(|e| error!("couldn't get file stat: {}", e)));
+                            discovered_files.push((path, stat));
                         }
                     }
                     discovered_files
@@ -137,22 +135,24 @@ impl Input for FileInput {
 
                 let mut trigger = false;
                 let mut state = state.lock();
-                for (path, id) in discovered_files {
-                    let len = state.files.len();
-                    let idx = *state.file_id_to_idx.entry(id).or_insert(len);
+                for (path, stat) in discovered_files {
+                    let next_idx = state.files.len();
+                    let idx = *state.file_id_to_idx.entry(stat.id).or_insert(next_idx);
                     if idx == state.files.len() {
-                        debug!("discovered new file: {:?} {:?}", path, id);
+                        debug!("discovered new file: {:?} {:?}", path, stat);
                         state.files.push(WatchedFile {
-                            id,
+                            id: stat.id,
                             path,
                             file: None,
                             offset: 0,
-                            len: 0,
+                            len: stat.len,
                             buf: Vec::new(),
                         });
                         trigger = true;
                     } else {
-                        trace!("file is already being watched: {:?} {:?}", path, id);
+                        trace!("file is already being watched: {:?} {:?}", path, stat);
+                        state.files[idx].update(&stat, Some(path));
+
                     }
                 }
                 mem::drop(state);
@@ -189,14 +189,13 @@ impl Input for FileInput {
 
                 blocking(clone!(state => move || {
                         let mut state = state.lock();
-                        let file = &mut state.files[i];
-                        match fs::metadata(&file.path) {
-                            Ok(meta) => {
-                                file.len = meta.len();
+                        match stat(&state.files[i].path) {
+                            Ok(stat) => {
+                                state.files[i].update(&stat, None);
                                 true
                             }
                             Err(e) => {
-                                error!("error getting file metadata `{:?}`: {:?}", file.path, e);
+                                error!("error getting file stat: {:?} {:?}", state.files[i].path, e);
                                 false
                             }
                         }
@@ -322,6 +321,21 @@ struct WatchedFile {
     buf: Vec<u8>,
 }
 
+impl WatchedFile {
+    pub fn update(&mut self, stat: &FileStat, path: Option<PathBuf>) {
+        if let Some(path) = path {
+            if self.path != path {
+                debug!("file renamed: {:?} -> {:?}", self.path, path);
+                self.path = path;
+            }
+        }
+        if self.len != stat.len {
+            debug!("file len changed: {:?} {} -> {}", self.path, self.len, stat.len);
+            self.len = stat.len;
+        }
+    }
+}
+
 struct State {
     files: Vec<WatchedFile>,
     file_id_to_idx: HashMap<FileId, usize>,
@@ -338,19 +352,20 @@ impl State {
     }
 }
 
+#[derive(Debug)]
+struct FileStat {
+    id: FileId,
+    len: u64,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 struct FileId((u64, u64));
 
-fn file_id<P: AsRef<Path>>(path: P) -> io::Result<FileId> {
-    use std::os::unix::ffi::OsStrExt;
-    unsafe {
-        let path = CString::new(path.as_ref().as_os_str().as_bytes())
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-        let mut stat: libc::stat = mem::uninitialized();
-        if libc::lstat(path.as_ptr(), &mut stat as *mut _) == 0 {
-            Ok(FileId((stat.st_dev as u64, stat.st_ino)))
-        } else {
-            Err(io::Error::last_os_error())
-        }
-    }
+fn stat<P: AsRef<Path>>(path: P) -> io::Result<FileStat> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = fs::metadata(path)?;
+    Ok(FileStat {
+        id: FileId((meta.dev(), meta.ino())),
+        len: meta.len(),
+    })
 }
