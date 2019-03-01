@@ -26,11 +26,28 @@ use component::input;
 use component::output;
 use metric::Metrics;
 use tokio::timer::Interval;
-use std::time::Instant;
-use std::time::Duration;
+use std::io::prelude::*;
+use std::time::{Duration, Instant};
 
 fn main() {
-    env_logger::init();
+    env_logger::Builder::from_default_env()
+        .format(|buf, record| {
+            let thread = std::thread::current();
+            if let Some(thread_name) = thread.name() {
+                writeln!(buf, "[{} {:5} {}][{}] {}",
+                    buf.precise_timestamp(), record.level(),
+                    record.module_path().unwrap_or(""),
+                    thread_name,
+                    record.args())
+            } else {
+                writeln!(buf, "[{} {:5} {}][{:?}] {}",
+                    buf.precise_timestamp(), record.level(),
+                    record.module_path().unwrap_or(""),
+                    thread.id(),
+                    record.args())
+            }
+        })
+        .init();
 
     let codec = registry().codec("plain").unwrap()
         .new(codec::New { config: value!{{ "charset" => "UTF-8" }}.into() }).unwrap();
