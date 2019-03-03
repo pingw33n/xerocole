@@ -20,17 +20,26 @@ macro_rules! try_cont {
 
 #[macro_export]
 macro_rules! clone {
-    ($($n:ident),+ => move || $body:expr) => (
+    ($n:ident: $n2:ident $($rest:tt)*) => (
+        clone!(@impl , $n: $n2 $($rest)*)
+    );
+    ($n:ident $($rest:tt)*) => (
+        clone!(@impl , $n $($rest)*)
+    );
+    (@impl , $n:ident: $n2:ident $($rest:tt)*) => (
         {
-            $( #[allow(unused_mut)] let mut $n = $n.clone(); )+
-            move || $body
+            #[allow(unused_mut)] let mut $n2 = $n.clone();
+            clone!(@impl $($rest)*)
         }
     );
-    ($($n:ident),+ => move |$p:tt| $body:expr) => (
-        {
-            $( #[allow(unused_mut)] let mut $n = $n.clone(); )+
-            move |$p| $body
-        }
+    (@impl , $n:ident $($rest:tt)*) => (
+        clone!(@impl , $n: $n $($rest)*)
+    );
+    (@impl => move || $body:expr) => (
+        move || $body
+    );
+    (@impl => move |$($p:tt),*| $body:expr) => (
+        move |$($p),*| $body
     );
 }
 
@@ -197,6 +206,7 @@ macro_rules! value {
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
+    use std::rc::Rc;
     use crate::value::*;
 
     fn map(mut e: Vec<(&str, Spanned<Value>)>) -> Value {
@@ -238,5 +248,49 @@ mod test {
                 ].into(),
             ].into()),
         ]));
+    }
+
+    #[test]
+    fn clone() {
+        fn fun0(mut f: impl FnMut() -> u32) {
+            for _ in 0..2 {
+                f();
+            }
+        }
+
+        fn fun1(mut f: impl FnMut(u32) -> u32) {
+            for _ in 0..2 {
+                f(123);
+            }
+        }
+
+        fn fun2(mut f: impl FnMut(u32, &str) -> u32) {
+            for _ in 0..2 {
+                f(123, "test");
+            }
+        }
+
+        let v1 = Rc::new(10);
+        let v2 = Rc::new(20);
+
+        fun0(clone!(v1 => move || *v1 + 123));
+        fun0(clone!(v1, v2 => move || *v1 + *v2));
+
+        fun1(clone!(v1 => move |a1| *v1 + a1));
+        fun2(clone!(v1 => move |a1, _a2| *v1 + a1));
+
+        fun1(clone!(v1: renamed_v1 => move |a1| *renamed_v1 + a1));
+        fun2(clone!(v1: renamed_v1 => move |a1, _a2| *renamed_v1 + a1));
+
+        fun1(clone!(v1, v2 => move |a1| *v1 + *v2 + a1));
+        fun2(clone!(v1, v2 => move |a1, _a2| *v1 + *v2 + a1));
+
+        fun1(clone!(v1: renamed_v1, v2 => move |a1| *renamed_v1 + *v2 + a1));
+        fun1(clone!(v1, v2: renamed_v2 => move |a1| *v1 + *renamed_v2 + a1));
+        fun1(clone!(v1: renamed_v1, v2: renamed_v2 => move |a1| *renamed_v1 + *renamed_v2 + a1));
+
+        fun2(clone!(v1: renamed_v1, v2 => move |a1, _a2| *renamed_v1 + *v2 + a1));
+        fun2(clone!(v1, v2: renamed_v2 => move |a1, _a2| *v1 + *renamed_v2 + a1));
+        fun2(clone!(v1: renamed_v1, v2: renamed_v2 => move |a1, _a2| *renamed_v1 + *renamed_v2 + a1));
     }
 }
