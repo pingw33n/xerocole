@@ -8,8 +8,9 @@ use stream_cancel::{StreamExt as ScStreamExt};
 use std::cmp;
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, Read};
+`use std::io;
 use std::mem;
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -102,13 +103,13 @@ impl Component for FileInput {
 
 impl Input for FileInput {
     fn start(&self) -> BoxFuture<Started, Error> {
-        let state = Arc::new(Mutex::new(State::new()));
+        let (shutdown_tx, shutdown_rx) = signal::signal();
+        let (trigger_tx, trigger_rx) = pulse::pulse();
+
+        let stateh = Arc::new(Mutex::new(State::new(trigger_tx)));
 
         let codec = self.config.codec.clone();
         let path_patterns = Arc::new(self.config.path_patterns.clone());
-
-        let (shutdown_tx, shutdown_rx) = signal::signal();
-        let (trigger_tx, trigger_rx) = pulse::pulse();
 
         executor::spawn(Interval::new(Instant::now(), Duration::from_secs(5))
             .take_until(shutdown_rx.clone().map(|_| {}))
@@ -128,37 +129,36 @@ impl Input for FileInput {
                     discovered_files
                 })).map_err(|e| error!("{:?}", e))
             }))
-            .for_each(clone!(state, trigger_tx => move |discovered_files| {
+            .for_each(clone!(stateh => move |discovered_files| {
                 if discovered_files.is_empty() {
                     return Ok(());
                 }
 
                 let mut trigger = false;
-                let mut state = state.lock();
+                let mut state = stateh.lock();
                 for (path, stat) in discovered_files {
                     let next_idx = state.files.len();
                     let idx = *state.file_id_to_idx.entry(stat.id).or_insert(next_idx);
                     if idx == state.files.len() {
                         debug!("discovered new file: {:?} {:?}", path, stat);
-                        state.files.push(WatchedFile {
+                        state.files.push(Arc::new(Mutex::new(WatchedFile {
                             id: stat.id,
                             path,
                             file: None,
                             offset: 0,
                             len: stat.len,
                             buf: Vec::new(),
-                        });
+                        })));
                         trigger = true;
                     } else {
                         trace!("file is already being watched: {:?} {:?}", path, stat);
-                        state.files[idx].update(&stat, Some(path));
-
+                        state.files[idx].lock().update(&stat, Some(path));
                     }
                 }
-                mem::drop(state);
                 if trigger {
-                    trigger_tx.signal();
+                    state.trigger();
                 }
+                mem::drop(state);
 
                 Ok(())
             }))
@@ -171,12 +171,12 @@ impl Input for FileInput {
         let stream: BoxStream<Event, Error> = Box::new(
                 Interval::new(Instant::now() + Duration::from_millis(1000), Duration::from_secs(5))
             .map(|_| {})
-            .map_err(|e| e.wrap_id(ErrorId::Unknown))
+            .map_err(|e| panic!("{:?}", e)).infallible()
             .select(trigger_rx.infallible())
             .take_until(shutdown_rx.clone())
-            .and_then(clone!(state => move |_| {
+            .and_then(clone!(stateh => move |_| {
                 let i = {
-                    let mut state = state.lock();
+                    let mut state = stateh.lock();
 
                     if state.files.is_empty() {
                         return future::ok(false).into_box();
@@ -187,29 +187,31 @@ impl Input for FileInput {
                     state.cur_file_idx
                 };
 
-                blocking(clone!(state => move || {
-                        let mut state = state.lock();
-                        match stat(&state.files[i].path) {
+                blocking(clone!(stateh => move || {
+                        let fileh = stateh.lock().files[i].clone();
+                        let mut file = fileh.lock();
+                        match stat(&file.path) {
                             Ok(stat) => {
-                                state.files[i].update(&stat, None);
-                                true
+                                file.update(&stat, None);
+                                Ok(true)
                             }
                             Err(e) => {
-                                error!("error getting file stat: {:?} {:?}", state.files[i].path, e);
-                                false
+                                error!("error getting file stat: {:?} {:?}", file.path, e);
+                                Err(e.wrap_id(ErrorId::Io))
                             }
                         }
                     }))
-                    .map_err(|e| e.wrap_id(ErrorId::Unknown))
+                    .map_err(|e| panic!("{:?}", e))
+                    .and_then(|r| r)
                     .into_box()
             }))
             .filter(|&v| v)
-            .and_then(clone!(state, trigger_tx => move |_| {
-                let state_ = state.clone();
-                let mut state = state_.lock();
+            .and_then(clone!(stateh => move |_| {
+                let mut state = stateh.lock();
 
                 let file_idx = state.cur_file_idx;
-                let file = &mut state.files[file_idx];
+                let fileh = state.files[file_idx].clone();
+                let mut file = fileh.lock();
 
                 if file.offset > file.len {
                     trace!("[{:?}] file.offset > file.len: {} > {}",
@@ -217,86 +219,34 @@ impl Input for FileInput {
                     // TODO handle file shrunk.
                     file.offset = 0;
                 }
-                if file.offset < file.len {
-                    trace!("[{:?}] file.offset < file.len: {} < {}",
-                        file.path, file.offset, file.len);
-                    const BUF_LEN: usize = 32768;
-                    let len = file.buf.len();
-                    let can_read = cmp::min(file.len - file.offset,
-                        (BUF_LEN - len) as u64) as usize;
-                    let end = len + can_read;
-                    file.buf.resize(end, 0);
-
-                    blocking(clone!(state_ => move || {
-                            let mut state = state_.lock();
-                            let file = &mut state.files[file_idx];
-                            if file.file.is_none() {
-                                debug!("opening file: {:?}", file.path);
-                                file.file = Some(File::open(&file.path)?);
-                            }
-                            file.file.as_mut().unwrap().read(&mut file.buf[len..end])
-                        }))
-                        .map_err(|e| e.wrap_id(ErrorId::Unknown))
-                        .and_then(clone!(state_, codec, trigger_tx => move |read| {
-                            let mut state = state_.lock();
-                            let file = &mut state.files[file_idx];
-
-                            let read = match read {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    error!("error reading file {:?}: {}", file.path, e);
-                                    return Err(e.wrap_id(ErrorId::Io));
-                                }
-                            };
-
-                            file.buf.truncate(len + read);
-                            file.offset += read as u64;
-
-                            let mut events = Vec::new();
-                            let consumed = {
-                                let mut left = &file.buf[..];
-                                loop {
-                                    let i = if let Some(i) = memchr::memchr(b'\n', left) {
-                                        i
-                                    } else {
-                                        break;
-                                    };
-                                    for mut event in codec.decode(&left[..i]).unwrap() {
-                                        event.fields_mut().insert("path".into(),
-                                            Value::String(file.path.to_string_lossy().into()));
-                                        events.push(event);
-                                    }
-
-                                    left = &left[i + 1..];
-                                }
-                                file.buf.len() - left.len()
-                            };
-                            file.buf.drain(..consumed);
-                            if state.cur_file_idx < state.files.len() {
-                                trigger_tx.signal();
-                            }
-                            Ok(stream::iter_ok(events).into_box())
-                        }))
-                        .into_box()
-                } else {
-                    state.cur_file_idx += 1;
-                    if state.cur_file_idx < state.files.len() {
-                        trigger_tx.signal();
-                    }
-                    future::ok(stream::empty().into_box()).into_box()
+                if file.offset == file.len {
+                    trace!("[{:?}] file.offset == file.len: {}", file.path, file.offset);
+                    state.next_file();
+                    return future::ok(stream::empty().into_box()).into_box();
                 }
+
+                trace!("[{:?}] file.offset < file.len: {} < {}",
+                    file.path, file.offset, file.len);
+                blocking(clone!(fileh => move || fileh.lock().fill_buf()))
+                    .map_err(|e| panic!("{:?}", e)).infallible()
+                    .and_then(clone!(stateh, fileh, codec => move |r| {
+                        r?;
+
+                        let events = fileh.lock().create_events(&*codec);
+
+                        stateh.lock().trigger_if_more_files();
+                        Ok(stream::iter_ok(events).into_box())
+                    }))
+                    .into_box()
             }))
-            .then(clone!(state => move |r| {
+            .then(clone!(stateh => move |r| {
                 match r {
                     r @ Ok(_) => r,
                     Err(e) => {
-                        let mut state = state.lock();
+                        let mut state = stateh.lock();
                         warn!("processing file {:?} failed: {:?}",
-                            state.files[state.cur_file_idx].path, e);
-                        state.cur_file_idx += 1;
-                        if state.cur_file_idx < state.files.len() {
-                            trigger_tx.signal();
-                        }
+                            state.files[state.cur_file_idx].lock().path, e);
+                        state.next_file();
                         Ok(stream::iter_ok(Vec::new()).into_box())
                     }
                 }
@@ -334,20 +284,84 @@ impl WatchedFile {
             self.len = stat.len;
         }
     }
+
+    pub fn fill_buf(&mut self) -> Result<()> {
+        const BUF_LEN: usize = 32768;
+
+        if self.file.is_none() {
+            debug!("opening file: {:?}", self.path);
+            self.file = Some(File::open(&self.path).wrap_err_id(ErrorId::Io)?);
+        }
+
+        let len = self.buf.len();
+        let can_read = cmp::min(self.len - self.offset, (BUF_LEN - len) as u64) as usize;
+        let end = len + can_read;
+        self.buf.resize(end, 0);
+        let read = self.file.as_ref().unwrap().read_at(&mut self.buf[len..end], self.offset)
+            .wrap_err_id(ErrorId::Io)?;
+
+        self.buf.truncate(len + read);
+        self.offset += read as u64;
+
+        Ok(())
+    }
+
+    pub fn create_events(&mut self, codec: &Codec) -> Vec<Event> {
+        let mut events = Vec::new();
+        let consumed = {
+            let mut left = &self.buf[..];
+            loop {
+                let i = if let Some(i) = memchr::memchr(b'\n', left) {
+                    i
+                } else {
+                    break;
+                };
+                for mut event in codec.decode(&left[..i]).unwrap() {
+                    event.fields_mut().insert("path".into(),
+                        Value::String(self.path.to_string_lossy().into()));
+                    events.push(event);
+                }
+
+                left = &left[i + 1..];
+            }
+            self.buf.len() - left.len()
+        };
+        self.buf.drain(..consumed);
+        events
+    }
 }
 
 struct State {
-    files: Vec<WatchedFile>,
+    files: Vec<Arc<Mutex<WatchedFile>>>,
     file_id_to_idx: HashMap<FileId, usize>,
     cur_file_idx: usize,
+    trigger: pulse::Sender,
 }
 
 impl State {
-    pub fn new() -> Self {
+    pub fn new(trigger: pulse::Sender) -> Self {
         Self {
             files: Vec::new(),
             file_id_to_idx: HashMap::new(),
             cur_file_idx: 0,
+            trigger,
+        }
+    }
+
+    pub fn trigger(&self) {
+        self.trigger.signal();
+    }
+
+    pub fn trigger_if_more_files(&self) {
+        if self.cur_file_idx < self.files.len() {
+            self.trigger();
+        }
+    }
+
+    pub fn next_file(&mut self) {
+        if self.cur_file_idx < self.files.len() {
+            self.cur_file_idx += 1;
+            self.trigger_if_more_files();
         }
     }
 }
