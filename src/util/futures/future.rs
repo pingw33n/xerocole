@@ -77,10 +77,11 @@ impl<F, R> Future for Blocking<F>
     where F: FnMut() -> R
 {
     type Item = R;
-    type Error = tokio_threadpool::BlockingError;
+    type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         tokio_threadpool::blocking(|| (self.f)())
+            .map_err(|_| panic!("thread pool is shut down"))
     }
 }
 

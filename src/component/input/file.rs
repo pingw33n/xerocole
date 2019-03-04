@@ -8,7 +8,7 @@ use stream_cancel::{StreamExt as ScStreamExt};
 use std::cmp;
 use std::collections::HashMap;
 use std::fs::{self, File};
-`use std::io;
+use std::io;
 use std::mem;
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
@@ -127,7 +127,7 @@ impl Input for FileInput {
                         }
                     }
                     discovered_files
-                })).map_err(|e| error!("{:?}", e))
+                }))
             }))
             .for_each(clone!(stateh => move |discovered_files| {
                 if discovered_files.is_empty() {
@@ -201,7 +201,7 @@ impl Input for FileInput {
                             }
                         }
                     }))
-                    .map_err(|e| panic!("{:?}", e))
+                    .infallible()
                     .and_then(|r| r)
                     .into_box()
             }))
@@ -228,7 +228,7 @@ impl Input for FileInput {
                 trace!("[{:?}] file.offset < file.len: {} < {}",
                     file.path, file.offset, file.len);
                 blocking(clone!(fileh => move || fileh.lock().fill_buf()))
-                    .map_err(|e| panic!("{:?}", e)).infallible()
+                    .infallible()
                     .and_then(clone!(stateh, fileh, codec => move |r| {
                         r?;
 
