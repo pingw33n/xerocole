@@ -22,21 +22,17 @@ impl super::super::Provider for Provider {
 }
 
 impl OutputProvider for Provider {
-    fn new(&self, ctx: New) -> Result<Box<Output>> {
-        let codec = if let Some(codec) = ctx.common_config.codec {
-            codec
-        } else {
-            registry().codec("debug").unwrap().new(codec::New { config: value!{{}}.into() })?
-        };
+    fn new(&self, _ctx: New) -> Result<Box<Output>> {
+        let encoder_factory = registry().encoder("debug").unwrap().new(Default::default())?;
         Ok(Box::new(StdoutOutput {
-            config: Config { codec },
+            config: Config { encoder_factory },
         }))
     }
 }
 
 #[derive(Clone)]
 struct Config {
-    codec: Arc<Codec>,
+    encoder_factory: Arc<encoder::Factory>,
 }
 
 #[derive(Clone)]
@@ -48,14 +44,14 @@ impl Output for StdoutOutput {
     fn start(&self) -> BoxFuture<Started, Error> {
         Box::new(future::ok(Started {
             sink: Box::new(StdoutSink {
-                config: self.config.clone(),
+                encoder: self.config.encoder_factory.new(),
             }),
         }))
     }
 }
 
 struct StdoutSink {
-    config: Config,
+    encoder: Box<encoder::Encoder>,
 }
 
 impl Sink for StdoutSink {
@@ -63,7 +59,10 @@ impl Sink for StdoutSink {
     type SinkError = Error;
 
     fn start_send(&mut self, event: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-        let s = self.config.codec.encode_as_string(&event)?;
+        let mut buf = Vec::new();
+        self.encoder.encode(&event, &mut buf)?;
+        let s = String::from_utf8_lossy(&buf);
+
         Ok(match tokio_threadpool::blocking(move || println!("{}", s)).unwrap() {
             Async::Ready(()) => AsyncSink::Ready,
             Async::NotReady => AsyncSink::NotReady(event),

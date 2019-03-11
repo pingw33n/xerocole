@@ -5,7 +5,6 @@ use futures::sink::BoxSink;
 use std::sync::Arc;
 
 use super::*;
-use crate::component::codec::Codec;
 use crate::error::Error;
 use crate::event::*;
 use crate::util::futures::BoxFuture;
@@ -13,7 +12,6 @@ use crate::util::futures::BoxFuture;
 #[derive(Default)]
 pub struct CommonConfig {
     pub id: Option<String>,
-    pub codec: Option<Arc<Codec>>,
 }
 
 pub struct New {

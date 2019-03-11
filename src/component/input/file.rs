@@ -2,7 +2,6 @@ use futures::prelude::*;
 use futures::{future, stream};
 use glob;
 use log::*;
-use memchr;
 use parking_lot::Mutex;
 use stream_cancel::{StreamExt as ScStreamExt};
 use std::cmp;
@@ -20,6 +19,7 @@ use tokio::timer::Interval;
 use super::*;
 use super::Metadata;
 use super::super::*;
+use crate::component::decoder::BufDecoder;
 use crate::error::*;
 use crate::event::*;
 use crate::util::futures::{*, stream::StreamExt};
@@ -59,11 +59,12 @@ enum StartFrom {
 struct Config {
     path_patterns: Vec<String>,
     start_from: StartFrom,
-    codec: Arc<Codec>,
+    stream_decoder: Arc<decoder::stream::Factory>,
+    frame_event_decoder: Arc<decoder::frame_event::Factory>,
 }
 
 impl Config {
-    fn parse(mut value: Spanned<Value>, common: CommonConfig) -> Result<Self> {
+    fn parse(mut value: Spanned<Value>, _common: CommonConfig) -> Result<Self> {
         let path_pattern_strs = value.remove("path")?.into_list()?;
         let mut path_patterns = Vec::new();
         for p in path_pattern_strs {
@@ -82,10 +83,17 @@ impl Config {
             StartFrom::Beginning
         };
 
+        let stream_decoder = registry().stream_decoder("gzip").unwrap().new(Default::default())?;
+        let frame_event_decoder = Arc::new(decoder::frame_event::composite::Factory::new(
+            registry().frame_decoder("delimited").unwrap().new(Default::default())?,
+            registry().event_decoder("text").unwrap().new(Default::default())?,
+        ));
+
         Ok(Self {
             path_patterns,
             start_from,
-            codec: common.codec.unwrap(),
+            stream_decoder,
+            frame_event_decoder,
         })
     }
 }
@@ -108,8 +116,10 @@ impl Input for FileInput {
 
         let stateh = Arc::new(Mutex::new(State::new(trigger_tx)));
 
-        let codec = self.config.codec.clone();
+        let stream_decoder = self.config.stream_decoder.clone();
+        let frame_event_decoder = self.config.frame_event_decoder.clone();
         let path_patterns = Arc::new(self.config.path_patterns.clone());
+        let start_from = self.config.start_from;
 
         executor::spawn(Interval::new(Instant::now(), Duration::from_secs(5))
             .take_until(shutdown_rx.clone().map(|_| {}))
@@ -129,7 +139,7 @@ impl Input for FileInput {
                     discovered_files
                 }))
             }))
-            .for_each(clone!(stateh => move |discovered_files| {
+            .for_each(clone!(stateh, stream_decoder, frame_event_decoder => move |discovered_files| {
                 if discovered_files.is_empty() {
                     return Ok(());
                 }
@@ -145,9 +155,14 @@ impl Input for FileInput {
                             id: stat.id,
                             path,
                             file: None,
-                            offset: 0,
+                            offset: match start_from {
+                                StartFrom::Beginning => 0,
+                                StartFrom::End => stat.len,
+                            },
                             len: stat.len,
-                            buf: Vec::new(),
+                            decoder: BufDecoder::new(
+                                stream_decoder.new(),
+                                frame_event_decoder.new()),
                         })));
                         trigger = true;
                     } else {
@@ -227,12 +242,13 @@ impl Input for FileInput {
 
                 trace!("[{:?}] file.offset < file.len: {} < {}",
                     file.path, file.offset, file.len);
-                blocking(clone!(fileh => move || fileh.lock().fill_buf()))
+                blocking(clone!(fileh => move || {
+                        fileh.lock().fill_buf()?;
+                        fileh.lock().decode()
+                    }))
                     .infallible()
-                    .and_then(clone!(stateh, fileh, codec => move |r| {
-                        r?;
-
-                        let events = fileh.lock().create_events(&*codec);
+                    .and_then(clone!(stateh => move |events| {
+                        let events = events?;
 
                         stateh.lock().trigger_if_more_files();
                         Ok(stream::iter_ok(events).into_box())
@@ -261,14 +277,13 @@ impl Input for FileInput {
     }
 }
 
-#[derive(Debug)]
 struct WatchedFile {
     id: FileId,
     path: PathBuf,
     file: Option<File>,
     offset: u64,
     len: u64,
-    buf: Vec<u8>,
+    decoder: BufDecoder,
 }
 
 impl WatchedFile {
@@ -286,48 +301,30 @@ impl WatchedFile {
     }
 
     pub fn fill_buf(&mut self) -> Result<()> {
-        const BUF_LEN: usize = 32768;
-
         if self.file.is_none() {
             debug!("opening file: {:?}", self.path);
             self.file = Some(File::open(&self.path).wrap_err_id(ErrorId::Io)?);
         }
 
-        let len = self.buf.len();
-        let can_read = cmp::min(self.len - self.offset, (BUF_LEN - len) as u64) as usize;
-        let end = len + can_read;
-        self.buf.resize(end, 0);
-        let read = self.file.as_ref().unwrap().read_at(&mut self.buf[len..end], self.offset)
+        let buf = self.decoder.writeable_buf();
+        let can_read = cmp::min(self.len - self.offset, buf.len() as u64) as usize;
+        let read = self.file.as_ref().unwrap().read_at(&mut buf.write()[..can_read], self.offset)
             .wrap_err_id(ErrorId::Io)?;
-
-        self.buf.truncate(len + read);
+        buf.advance_write_pos(read);
         self.offset += read as u64;
 
         Ok(())
     }
 
-    pub fn create_events(&mut self, codec: &Codec) -> Vec<Event> {
+    pub fn decode(&mut self) -> Result<Vec<Event>> {
         let mut events = Vec::new();
-        let consumed = {
-            let mut left = &self.buf[..];
-            loop {
-                let i = if let Some(i) = memchr::memchr(b'\n', left) {
-                    i
-                } else {
-                    break;
-                };
-                for mut event in codec.decode(&left[..i]).unwrap() {
-                    event.fields_mut().insert("path".into(),
-                        Value::String(self.path.to_string_lossy().into()));
-                    events.push(event);
-                }
-
-                left = &left[i + 1..];
-            }
-            self.buf.len() - left.len()
-        };
-        self.buf.drain(..consumed);
-        events
+        while self.decoder.decode(&mut events)? > 0 {
+        }
+        for event in &mut events {
+            event.fields_mut().insert("path".into(),
+                Value::String(self.path.to_string_lossy().into()));
+        }
+        Ok(events)
     }
 }
 

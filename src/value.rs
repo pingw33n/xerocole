@@ -51,6 +51,15 @@ impl<T> Spanned<T> {
     }
 }
 
+impl<T: Default> Default for Spanned<T> {
+    fn default() -> Self {
+        Self {
+            value: Default::default(),
+            span: 0..0,
+        }
+    }
+}
+
 impl<T> From<T> for Spanned<T> {
     fn from(value: T) -> Self {
         Self {
@@ -93,6 +102,29 @@ impl Spanned<Value> {
             None => Err(ErrorDetails::new(format!("Map must specify required key `{}`", key),
                 self.span.clone()).wrap_id(ErrorId::Parse)),
         }
+    }
+
+    /// Removes at most one under the specified `keys` ensuring the mutual exclusivity of the keys.
+    pub fn remove_exclusive_opt<'a>(&mut self, keys: &[&'a str])
+        -> Result<Option<(&'a str, Spanned<Value>)>>
+    {
+        for (i, key) in keys.iter().enumerate() {
+            if self.get_opt(key)?.is_none() {
+                continue;
+            }
+            for key in &keys[i + 1..] {
+                if self.get_opt(key)?.is_some() {
+                    return Err(ErrorDetails::new(
+                        format!("at most one of [{}] can be specified",
+                            itertools::join(keys.iter().map(|k| format!("`{}`", k)), ", ")),
+                        self.get_opt(key)?.unwrap().span.clone())
+                        .wrap_id(ErrorId::Parse))
+                }
+            }
+            let v = self.remove_opt(key)?;
+            return Ok(v.map(|v| (*key, v)));
+        }
+        Ok(None)
     }
 
     pub fn remove_opt(&mut self, key: &str) -> Result<Option<Spanned<Value>>> {
@@ -175,6 +207,12 @@ impl Value {
 impl<'a> From<&'a str> for Value {
     fn from(v: &'a str) -> Self {
         v.to_owned().into()
+    }
+}
+
+impl Default for Value {
+    fn default() -> Self {
+        Value::Map(Map::new())
     }
 }
 

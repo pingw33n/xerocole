@@ -20,7 +20,6 @@ use log::*;
 use std::sync::Arc;
 
 use component::*;
-use component::codec;
 use component::filter;
 use component::input;
 use component::output;
@@ -49,19 +48,17 @@ fn main() {
         })
         .init();
 
-    let codec = registry().codec("plain").unwrap()
-        .new(codec::New { config: value!{{ "charset" => "UTF-8" }}.into() }).unwrap();
     let input = registry().input("file").unwrap().new(input::New {
         config: value!{{
             "path" => [
-                "/tmp/log.txt",
-                "/tmp/log.*.txt",
+//                "/tmp/log.txt",
+//                "/tmp/log.*.txt",
 //                "misc/access.log".into(),
+                "/tmp/log.txt.gz",
             ],
             "start_position" => "beginning",
         }}.into(),
         common_config: input::CommonConfig {
-            codec: Some(codec),
             .. Default::default()
         }})
         .unwrap();
