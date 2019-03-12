@@ -45,7 +45,7 @@ enum TypedProvider {
     Filter(Box<FilterProvider>),
     Input(Box<InputProvider>),
     Output(Box<OutputProvider>),
-    StreamDecoder(Box<decoder::stream::DecoderProvider>),
+    StreamDecoder(Box<decoder::stream::Provider>),
 }
 
 impl TypedProvider {
@@ -97,7 +97,7 @@ impl TypedProvider {
         }
     }
 
-    pub fn as_stream_decoder(&self) -> Option<&Box<decoder::stream::DecoderProvider>> {
+    pub fn as_stream_decoder(&self) -> Option<&Box<decoder::stream::Provider>> {
         if let TypedProvider::StreamDecoder(v) = self {
             Some(v)
         } else {
@@ -150,15 +150,15 @@ impl Registry {
             TypedProvider::Encoder(Box::new(provider)));
     }
 
-    pub fn stream_decoder<'a>(&'a self, name: &str) -> Option<&'a dyn decoder::stream::DecoderProvider> {
+    pub fn stream_decoder<'a>(&'a self, name: &str) -> Option<&'a dyn decoder::stream::Provider> {
         self.components.get(&(ComponentKind::StreamDecoder, name.to_string()))
             .and_then(|v| v.as_stream_decoder())
             .map(|v| v.as_ref())
     }
 
-    pub fn register_stream_decoder(&mut self, provider: impl 'static + decoder::stream::DecoderProvider) {
+    pub fn register_stream_decoder(&mut self, provider: Box<decoder::stream::Provider>) {
         self.components.insert((ComponentKind::StreamDecoder, provider.metadata().name.into()),
-            TypedProvider::StreamDecoder(Box::new(provider)));
+            TypedProvider::StreamDecoder(provider));
     }
 
     pub fn event_decoder<'a>(&'a self, name: &str) -> Option<&'a dyn decoder::event::Provider> {
@@ -212,8 +212,8 @@ lazy_static! {
         r.register_output(output::null::Provider);
         r.register_output(output::stdout::Provider);
 
-        r.register_stream_decoder(decoder::stream::gzip::Provider);
-        r.register_stream_decoder(decoder::stream::plain::Provider);
+        r.register_stream_decoder(decoder::stream::gzip::provider());
+        r.register_stream_decoder(decoder::stream::plain::provider());
 
         r
     };

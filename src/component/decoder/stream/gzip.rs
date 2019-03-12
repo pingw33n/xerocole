@@ -1,26 +1,29 @@
 use flate2::{Decompress, FlushDecompress, Status};
 use gzip_header::read_gz_header;
 use std::io;
-
-use super::*;
 use std::io::Cursor;
 
-pub struct Provider;
+use super::*;
+use crate::component::{ComponentKind, Metadata, Provider as CProvider};
 
-impl Provider {
-    pub const NAME: &'static str = "gzip";
+pub const NAME: &'static str = "gzip";
+
+pub fn provider() -> Box<Provider> {
+    Box::new(ProviderImpl)
 }
 
-impl crate::component::Provider for Provider {
+struct ProviderImpl;
+
+impl CProvider for ProviderImpl {
     fn metadata(&self) -> Metadata {
         Metadata {
             kind: ComponentKind::StreamDecoder,
-            name: Self::NAME,
+            name: NAME,
         }
     }
 }
 
-impl DecoderProvider for Provider {
+impl Provider for ProviderImpl {
     fn new(&self, _ctx: New) -> Result<Arc<Factory>> {
         Ok(Arc::new(FactoryImpl {
         }))

@@ -1,30 +1,32 @@
 use std::cmp;
 
 use super::*;
+use crate::component::{ComponentKind, Metadata, Provider as CProvider};
 
-pub struct Provider;
+pub const NAME: &'static str = "plain";
 
-impl Provider {
-    pub const NAME: &'static str = "plain";
+pub fn provider() -> Box<Provider> {
+    Box::new(ProviderImpl)
 }
 
-impl crate::component::Provider for Provider {
+struct ProviderImpl;
+
+impl CProvider for ProviderImpl {
     fn metadata(&self) -> Metadata {
         Metadata {
             kind: ComponentKind::StreamDecoder,
-            name: Self::NAME,
+            name: NAME,
         }
     }
 }
 
-impl DecoderProvider for Provider {
+impl Provider for ProviderImpl {
     fn new(&self, _ctx: New) -> Result<Arc<Factory>> {
         Ok(Arc::new(FactoryImpl {}))
     }
 }
 
-struct FactoryImpl {
-}
+struct FactoryImpl {}
 
 impl Factory for FactoryImpl {
     fn new(&self) -> Box<Decoder> {
