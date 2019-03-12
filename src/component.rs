@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 use crate::error::*;
 use crate::value::*;
-use input::InputProvider;
 use output::OutputProvider;
 
 pub trait Provider: Send + Sync {
@@ -42,7 +41,7 @@ enum TypedProvider {
     EventDecoder(Box<decoder::event::Provider>),
     FrameDecoder(Box<decoder::frame::Provider>),
     Filter(Box<filter::Provider>),
-    Input(Box<InputProvider>),
+    Input(Box<input::Provider>),
     Output(Box<OutputProvider>),
     StreamDecoder(Box<decoder::stream::Provider>),
 }
@@ -80,7 +79,7 @@ impl TypedProvider {
         }
     }
 
-    pub fn as_input(&self) -> Option<&Box<InputProvider>> {
+    pub fn as_input(&self) -> Option<&Box<input::Provider>> {
         if let TypedProvider::Input(v) = self {
             Some(v)
         } else {
@@ -127,15 +126,15 @@ impl Registry {
             TypedProvider::Filter(provider));
     }
 
-    pub fn input<'a>(&'a self, name: &str) -> Option<&'a dyn InputProvider> {
+    pub fn input<'a>(&'a self, name: &str) -> Option<&'a dyn input::Provider> {
         self.components.get(&(ComponentKind::Input, name.to_string()))
             .and_then(|v| v.as_input())
             .map(|v| v.as_ref())
     }
 
-    pub fn register_input(&mut self, provider: impl 'static + InputProvider) {
+    pub fn register_input(&mut self, provider: Box<input::Provider>) {
         self.components.insert((ComponentKind::Input, provider.metadata().name.into()),
-            TypedProvider::Input(Box::new(provider)));
+            TypedProvider::Input(provider));
     }
 
     pub fn encoder<'a>(&'a self, name: &str) -> Option<&'a dyn encoder::Provider> {
@@ -206,7 +205,7 @@ lazy_static! {
 
         r.register_frame_decoder(decoder::frame::delimited::provider());
 
-        r.register_input(input::file::Provider);
+        r.register_input(input::file::provider());
 
         r.register_output(output::null::Provider);
         r.register_output(output::stdout::Provider);

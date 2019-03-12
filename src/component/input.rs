@@ -20,7 +20,7 @@ pub struct Started {
     pub shutdown: signal::Sender,
 }
 
-pub trait InputProvider: Provider {
+pub trait Provider: 'static + super::Provider {
     fn new(&self, ctx: New) -> Result<Box<Input>>;
 }
 

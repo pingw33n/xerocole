@@ -17,8 +17,7 @@ use tokio::executor;
 use tokio::timer::Interval;
 
 use super::*;
-use super::Metadata;
-use super::super::*;
+use crate::component::{ComponentKind, Metadata, Provider as CProvider};
 use crate::component::decoder::BufDecoder;
 use crate::error::*;
 use crate::event::*;
@@ -26,22 +25,24 @@ use crate::util::futures::{*, stream::StreamExt};
 use crate::util::futures::future::blocking;
 use crate::value::*;
 
-pub struct Provider;
+pub const NAME: &'static str = "file";
 
-impl Provider {
-    pub const NAME: &'static str = "file";
+pub fn provider() -> Box<Provider> {
+    Box::new(ProviderImpl)
 }
 
-impl super::super::Provider for Provider {
+struct ProviderImpl;
+
+impl CProvider for ProviderImpl {
     fn metadata(&self) -> Metadata {
         Metadata {
             kind: ComponentKind::Input,
-            name: Self::NAME,
+            name: NAME,
         }
     }
 }
 
-impl InputProvider for Provider {
+impl Provider for ProviderImpl {
     fn new(&self, ctx: New) -> Result<Box<Input>> {
         Ok(Box::new(FileInput {
             config: Config::parse(ctx.config, ctx.common_config)?,
@@ -105,7 +106,7 @@ struct FileInput {
 impl Component for FileInput {
     fn provider_metadata(&self) -> Metadata {
         use super::super::{Provider as P};
-        Provider.metadata()
+        ProviderImpl.metadata()
     }
 }
 
