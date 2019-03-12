@@ -1,27 +1,30 @@
 use super::*;
+use crate::component::{ComponentKind, Metadata, Provider as CProvider};
 use crate::event::*;
 use crate::value::*;
+
+pub const NAME: &'static str = "text";
 
 const CHARSET: &'static str = "charset";
 const DEFAULT_CHARSET: &'static str = "UTF-8";
 const DEFAULT_FIELD: &'static str = "message";
 
-pub struct Provider;
-
-impl Provider {
-    pub const NAME: &'static str = "text";
+pub fn provider() -> Box<Provider> {
+    Box::new(ProviderImpl)
 }
 
-impl crate::component::Provider for Provider {
+struct ProviderImpl;
+
+impl CProvider for ProviderImpl {
     fn metadata(&self) -> Metadata {
         Metadata {
             kind: ComponentKind::EventDecoder,
-            name: Self::NAME,
+            name: NAME,
         }
     }
 }
 
-impl DecoderProvider for Provider {
+impl Provider for ProviderImpl {
     fn new(&self, ctx: New) -> Result<Arc<Factory>> {
         let charset = ctx.config.get_opt_str(CHARSET)?.unwrap_or(DEFAULT_CHARSET);
         if charset != DEFAULT_CHARSET {

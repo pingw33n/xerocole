@@ -40,8 +40,8 @@ pub enum ComponentKind {
 
 enum TypedProvider {
     Encoder(Box<encoder::EncoderProvider>),
-    EventDecoder(Box<decoder::event::DecoderProvider>),
-    FrameDecoder(Box<decoder::frame::DecoderProvider>),
+    EventDecoder(Box<decoder::event::Provider>),
+    FrameDecoder(Box<decoder::frame::Provider>),
     Filter(Box<FilterProvider>),
     Input(Box<InputProvider>),
     Output(Box<OutputProvider>),
@@ -57,7 +57,7 @@ impl TypedProvider {
         }
     }
 
-    pub fn as_event_decoder(&self) -> Option<&Box<decoder::event::DecoderProvider>> {
+    pub fn as_event_decoder(&self) -> Option<&Box<decoder::event::Provider>> {
         if let TypedProvider::EventDecoder(v) = self {
             Some(v)
         } else {
@@ -65,7 +65,7 @@ impl TypedProvider {
         }
     }
 
-    pub fn as_frame_decoder(&self) -> Option<&Box<decoder::frame::DecoderProvider>> {
+    pub fn as_frame_decoder(&self) -> Option<&Box<decoder::frame::Provider>> {
         if let TypedProvider::FrameDecoder(v) = self {
             Some(v)
         } else {
@@ -161,26 +161,26 @@ impl Registry {
             TypedProvider::StreamDecoder(Box::new(provider)));
     }
 
-    pub fn event_decoder<'a>(&'a self, name: &str) -> Option<&'a dyn decoder::event::DecoderProvider> {
+    pub fn event_decoder<'a>(&'a self, name: &str) -> Option<&'a dyn decoder::event::Provider> {
         self.components.get(&(ComponentKind::EventDecoder, name.to_string()))
             .and_then(|v| v.as_event_decoder())
             .map(|v| v.as_ref())
     }
 
-    pub fn register_event_decoder(&mut self, provider: impl 'static + decoder::event::DecoderProvider) {
+    pub fn register_event_decoder(&mut self, provider: Box<decoder::event::Provider>) {
         self.components.insert((ComponentKind::EventDecoder, provider.metadata().name.into()),
-            TypedProvider::EventDecoder(Box::new(provider)));
+            TypedProvider::EventDecoder(provider));
     }
 
-    pub fn frame_decoder<'a>(&'a self, name: &str) -> Option<&'a dyn decoder::frame::DecoderProvider> {
+    pub fn frame_decoder<'a>(&'a self, name: &str) -> Option<&'a dyn decoder::frame::Provider> {
         self.components.get(&(ComponentKind::FrameDecoder, name.to_string()))
             .and_then(|v| v.as_frame_decoder())
             .map(|v| v.as_ref())
     }
 
-    pub fn register_frame_decoder(&mut self, provider: impl 'static + decoder::frame::DecoderProvider) {
+    pub fn register_frame_decoder(&mut self, provider: Box<decoder::frame::Provider>) {
         self.components.insert((ComponentKind::FrameDecoder, provider.metadata().name.into()),
-            TypedProvider::FrameDecoder(Box::new(provider)));
+            TypedProvider::FrameDecoder(provider));
     }
 
     pub fn output<'a>(&'a self, name: &str) -> Option<&'a dyn OutputProvider> {
@@ -201,11 +201,11 @@ lazy_static! {
 
         r.register_encoder(encoder::debug::Provider);
 
-        r.register_event_decoder(decoder::event::text::Provider);
+        r.register_event_decoder(decoder::event::text::provider());
 
         r.register_filter(filter::grok::Provider);
 
-        r.register_frame_decoder(decoder::frame::delimited::Provider);
+        r.register_frame_decoder(decoder::frame::delimited::provider());
 
         r.register_input(input::file::Provider);
 

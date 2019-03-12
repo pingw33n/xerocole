@@ -1,28 +1,31 @@
 use memchr::*;
+use std::marker::PhantomData;
 
 use super::*;
+use crate::component::{ComponentKind, Metadata, Provider as CProvider};
 use crate::value::*;
-use std::marker::PhantomData;
+
+pub const NAME: &'static str = "delimited";
 
 const STRING: &'static str = "string";
 const LINE: &'static str = "line";
 
-pub struct Provider;
-
-impl Provider {
-    pub const NAME: &'static str = "delimited";
+pub fn provider() -> Box<Provider> {
+    Box::new(ProviderImpl)
 }
 
-impl crate::component::Provider for Provider {
+struct ProviderImpl;
+
+impl CProvider for ProviderImpl {
     fn metadata(&self) -> Metadata {
         Metadata {
             kind: ComponentKind::FrameDecoder,
-            name: Self::NAME,
+            name: NAME,
         }
     }
 }
 
-impl DecoderProvider for Provider {
+impl Provider for ProviderImpl {
     fn new(&self, mut ctx: New) -> Result<Arc<Factory>> {
         let delimiter = if let Some((key, delimiter)) = ctx.config.remove_exclusive_opt(&[
             STRING,
@@ -308,7 +311,7 @@ mod test {
         use super::*;
 
         fn new<'a>() -> (Box<Decoder>, Vec<&'a [u8]>) {
-            let dec = Provider.new(New { config: value!{{}}.into() }).unwrap().new();
+            let dec = ProviderImpl.new(New { config: value!{{}}.into() }).unwrap().new();
             let frames = Vec::new();
             (dec, frames)
         }
@@ -412,7 +415,7 @@ mod test {
         use super::*;
 
         fn new<'a>() -> (Box<Decoder>, Vec<&'a [u8]>) {
-            let dec = Provider.new(New { config: value!{{ STRING => "~!~" }}.into() })
+            let dec = ProviderImpl.new(New { config: value!{{ STRING => "~!~" }}.into() })
                 .unwrap().new();
             let frames = Vec::new();
             (dec, frames)

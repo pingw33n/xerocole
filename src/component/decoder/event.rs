@@ -2,16 +2,16 @@ pub mod text;
 
 use std::sync::Arc;
 
-use super::super::*;
 use crate::error::*;
 use crate::event::*;
+use crate::value::*;
 
 #[derive(Default)]
 pub struct New {
     pub config: Spanned<Value>,
 }
 
-pub trait DecoderProvider: Provider {
+pub trait Provider: 'static + super::super::Provider {
     fn new(&self, ctx: New) -> Result<Arc<Factory>>;
 }
 
