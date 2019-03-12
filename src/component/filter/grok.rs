@@ -3,28 +3,30 @@ use onig::Regex;
 use std::sync::Arc;
 
 use super::*;
-use super::super::*;
+use crate::component::{ComponentKind, Metadata, Provider as CProvider};
 use crate::error::*;
 use crate::event::*;
 use crate::util::futures::{BoxFuture, BoxStream};
 use crate::value::*;
 
-pub struct Provider;
+pub const NAME: &'static str = "grok";
 
-impl Provider {
-    pub const NAME: &'static str = "grok";
+pub fn provider() -> Box<Provider> {
+    Box::new(ProviderImpl)
 }
 
-impl super::super::Provider for Provider {
+struct ProviderImpl;
+
+impl CProvider for ProviderImpl {
     fn metadata(&self) -> Metadata {
         Metadata {
             kind: ComponentKind::Filter,
-            name: Self::NAME,
+            name: NAME,
         }
     }
 }
 
-impl FilterProvider for Provider {
+impl Provider for ProviderImpl {
     fn new(&self, ctx: New) -> Result<Box<Filter>> {
         Ok(Box::new(GrokFilter {
             config: Config::parse(ctx.config)?,

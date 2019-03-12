@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 use crate::error::*;
 use crate::value::*;
-use filter::FilterProvider;
 use input::InputProvider;
 use output::OutputProvider;
 
@@ -42,7 +41,7 @@ enum TypedProvider {
     Encoder(Box<encoder::Provider>),
     EventDecoder(Box<decoder::event::Provider>),
     FrameDecoder(Box<decoder::frame::Provider>),
-    Filter(Box<FilterProvider>),
+    Filter(Box<filter::Provider>),
     Input(Box<InputProvider>),
     Output(Box<OutputProvider>),
     StreamDecoder(Box<decoder::stream::Provider>),
@@ -73,7 +72,7 @@ impl TypedProvider {
         }
     }
 
-    pub fn as_filter(&self) -> Option<&Box<FilterProvider>> {
+    pub fn as_filter(&self) -> Option<&Box<filter::Provider>> {
         if let TypedProvider::Filter(v) = self {
             Some(v)
         } else {
@@ -117,15 +116,15 @@ impl Registry {
         }
     }
 
-    pub fn filter<'a>(&'a self, name: &str) -> Option<&'a dyn FilterProvider> {
+    pub fn filter<'a>(&'a self, name: &str) -> Option<&'a dyn filter::Provider> {
         self.components.get(&(ComponentKind::Filter, name.to_string()))
             .and_then(|v| v.as_filter())
             .map(|v| v.as_ref())
     }
 
-    pub fn register_filter(&mut self, provider: impl 'static + FilterProvider) {
+    pub fn register_filter(&mut self, provider: Box<filter::Provider>) {
         self.components.insert((ComponentKind::Filter, provider.metadata().name.into()),
-            TypedProvider::Filter(Box::new(provider)));
+            TypedProvider::Filter(provider));
     }
 
     pub fn input<'a>(&'a self, name: &str) -> Option<&'a dyn InputProvider> {
@@ -203,7 +202,7 @@ lazy_static! {
 
         r.register_event_decoder(decoder::event::text::provider());
 
-        r.register_filter(filter::grok::Provider);
+        r.register_filter(filter::grok::provider());
 
         r.register_frame_decoder(decoder::frame::delimited::provider());
 

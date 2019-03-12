@@ -22,7 +22,7 @@ pub struct Started {
     pub instance: Arc<Instance>,
 }
 
-pub trait FilterProvider: Provider {
+pub trait Provider: 'static + super::Provider {
     fn new(&self, ctx: New) -> Result<Box<Filter>>;
 }
 
