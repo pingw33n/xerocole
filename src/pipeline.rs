@@ -10,7 +10,7 @@ use std::time::Duration;
 use tokio::executor;
 
 use crate::component::input::Input;
-use crate::component::filter::{self, Filter};
+use crate::component::filter;
 use crate::component::output::Output;
 use crate::error::*;
 use crate::event::Event;
@@ -29,13 +29,15 @@ pub trait Predicate: 'static + Send + Sync {
 }
 
 pub enum Node {
-    Filters((Vec<Box<Filter>>, Box<Node>)),
+    Filters((Vec<Arc<filter::Starter>>, Box<Node>)),
     Switch(Vec<(Arc<Predicate>, Box<Node>)>),
     Outputs(Vec<Box<Output>>),
 }
 
 enum IntNode {
     Filters {
+        /// Index pointers to filters inside `StartGraph.filters`.
+        /// At most one pointer can exist to a single filter.
         filters: Vec<usize>,
         next: Box<IntNode>
     },
@@ -44,7 +46,7 @@ enum IntNode {
 }
 
 impl IntNode {
-    fn from(node: Node, filters: &mut Vec<Box<Filter>>,
+    fn from(node: Node, filters: &mut Vec<Arc<filter::Starter>>,
         output_groups: &mut Vec<Vec<Box<Output>>>) -> Self
     {
         match node {
@@ -71,10 +73,12 @@ impl IntNode {
     }
 }
 
-type FilterChain = Box<Fn(Event) -> BoxStream<Event, Error> + Send>;
+type FilterChain = Box<FnMut(Event) -> BoxStream<Event, Error> + Send>;
 
 struct StartGraph<'a> {
-    filters: &'a [filter::Started],
+    /// All filters in the graph in a started state.
+    /// The graph traversing code will take filters pointed by the nodes, leaving `None` instead.
+    filters: &'a mut [Option<Box<filter::Filter>>],
     output_groups: &'a [mpsc::Sender<Event>],
     concurrency: usize,
 }
@@ -140,24 +144,25 @@ impl PipelineBuilder {
 
         let mut filters = Vec::new();
         let mut output_groups = Vec::new();
-        let graph = IntNode::from(self.graph.unwrap(), &mut filters, &mut output_groups);
+        let graph = Arc::new(IntNode::from(self.graph.unwrap(), &mut filters, &mut output_groups));
 
         let output_groups = Self::start_output_groups(output_groups, self.concurrency);
 
         let concurrency = self.concurrency;
 
-        executor::spawn(Self::start_filters(&filters)
-            .map_err(|_| {})
-            .map(move |filters| {
-                for _ in 0..concurrency {
-                    Self::start_graph(&graph, Box::new(in_queue_rx.clone().infallible()),
-                        &StartGraph {
-                            filters: &filters,
+        for _ in 0..concurrency {
+            executor::spawn(Self::start_filters(&filters)
+                .map_err(|e| error!("{:?}", e))
+                .map(clone!(graph, in_queue_rx, output_groups => move |filters| {
+                    let mut filters: Vec<_> = filters.into_iter().map(Some).collect();
+                    Self::start_graph(&graph, Box::new(in_queue_rx.infallible()),
+                        &mut StartGraph {
+                            filters: &mut filters,
                             output_groups: &output_groups,
                             concurrency,
                         });
-                }
-            }));
+                })));
+        }
     }
 
     fn start_inputs(inputs: Vec<InputInfo>, in_queue_tx: mpmc::Sender<Event>,
@@ -191,12 +196,12 @@ impl PipelineBuilder {
         }
     }
 
-    fn start_graph(node: &IntNode, stream: BoxStream<Event, Error>, ctx: &StartGraph)
+    fn start_graph(node: &IntNode, stream: BoxStream<Event, Error>, ctx: &mut StartGraph)
     {
         match node {
             IntNode::Filters { filters: ids, next } => {
-                let chain = Self::chain_filters(ids.iter()
-                    .map(|&id| ctx.filters[id].instance.clone()));
+                let mut chain = Self::chain_filters(ids.iter()
+                    .map(|&id| ctx.filters[id].take().unwrap()));
                 let stream = Box::new(stream
                     .map(move |event| chain(event))
                     .flatten());
@@ -243,25 +248,26 @@ impl PipelineBuilder {
         }
     }
 
-    fn start_filters(filters: &[Box<Filter>]) -> impl Future<Item=Vec<filter::Started>, Error=Error> {
-        let futs = filters.iter()
-            .map(|f| {
+    fn start_filters(starters: &[Arc<filter::Starter>])
+            -> impl Future<Item=Vec<Box<filter::Filter + 'static>>, Error=Error> {
+        let futs = starters.iter()
+            .map(|s| {
                 info!("starting filter");
-                f.start()
+                s.start()
             })
             .collect::<Vec<_>>();
         future::join_all(futs)
     }
 
-    fn chain_filters(instances: impl IntoIterator<Item=Arc<filter::Instance>>) -> FilterChain {
-        let instances = instances.into_iter().collect::<Vec<_>>();
-        assert!(!instances.is_empty());
+    fn chain_filters(filters: impl IntoIterator<Item=Box<filter::Filter>>) -> FilterChain {
+        let mut filters = filters.into_iter().collect::<Vec<_>>();
+        assert!(!filters.is_empty());
         Box::new(move |event| {
-            let mut r = instances[0].filter(event);
-            for instance in &instances[1..] {
-                // TODO implement proper FilterChain impl with less allocations
+            let mut r = filters[0].filter(event);
+            for mut filter in filters.drain(1..) {
+                // TODO implement proper FilterChain with less allocations
                 r = Box::new(r
-                    .map(clone!(instance => move |event| instance.filter(event)))
+                    .map(move |event| filter.filter(event))
                     .flatten());
             }
             r

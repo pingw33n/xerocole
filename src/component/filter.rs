@@ -18,18 +18,14 @@ pub struct New {
     pub common_config: CommonConfig,
 }
 
-pub struct Started {
-    pub instance: Arc<Instance>,
+pub trait Provider: 'static + super::Provider {
+    fn new(&self, ctx: New) -> Result<Arc<Starter>>;
 }
 
-pub trait Provider: 'static + super::Provider {
-    fn new(&self, ctx: New) -> Result<Box<Filter>>;
+pub trait Starter: 'static + Send + Sync {
+    fn start(&self) -> BoxFuture<Box<Filter>, Error>;
 }
 
 pub trait Filter: 'static + Send {
-    fn start(&self) -> BoxFuture<Started, Error>;
-}
-
-pub trait Instance: 'static + Send + Sync {
-    fn filter(&self, event: Event) -> BoxStream<Event, Error>;
+    fn filter(&mut self, event: Event) -> BoxStream<Event, Error>;
 }

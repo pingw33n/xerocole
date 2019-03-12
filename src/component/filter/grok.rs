@@ -27,8 +27,8 @@ impl CProvider for ProviderImpl {
 }
 
 impl Provider for ProviderImpl {
-    fn new(&self, ctx: New) -> Result<Box<Filter>> {
-        Ok(Box::new(GrokFilter {
+    fn new(&self, ctx: New) -> Result<Arc<Starter>> {
+        Ok(Arc::new(StarterImpl {
             config: Config::parse(ctx.config)?,
         }))
     }
@@ -102,26 +102,24 @@ impl Config {
     }
 }
 
-struct GrokFilter {
+struct StarterImpl {
     config: Config,
 }
 
-impl Filter for GrokFilter {
-    fn start(&self) -> BoxFuture<Started, Error> {
-        Box::new(future::ok(Started {
-            instance: Arc::new(GrokInstance {
-                config: self.config.clone(),
-            }),
-        }))
+impl Starter for StarterImpl {
+    fn start(&self) -> BoxFuture<Box<Filter>, Error> {
+        Box::new(future::ok(Box::new(FilterImpl {
+            config: self.config.clone(),
+        }) as Box<Filter>))
     }
 }
 
-struct GrokInstance {
+struct FilterImpl {
     config: Config,
 }
 
-impl Instance for GrokInstance {
-    fn filter(&self, mut event: Event) -> BoxStream<Event, Error> {
+impl Filter for FilterImpl {
+    fn filter(&mut self, mut event: Event) -> BoxStream<Event, Error> {
         let mut new_fields = Vec::new();
         for &(ref field, ref regexes) in &self.config.patterns {
             let value = event.fields().get(field).and_then(|v| v.as_string().ok());
