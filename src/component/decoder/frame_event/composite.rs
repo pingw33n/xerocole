@@ -1,41 +1,38 @@
 use std::sync::Arc;
 
-use super::super::*;
-use super::Decode;
+use super::*;
+use super::super::{frame, event};
 use crate::error::*;
 use crate::event::*;
 
+pub fn factory(frame: Arc<frame::Factory>, event: Arc<event::Factory>) -> Arc<Factory> {
+    Arc::new(FactoryImpl {
+        frame,
+        event,
+    })
+}
+
 #[derive(Clone)]
-pub struct Factory {
+struct FactoryImpl {
     frame: Arc<frame::Factory>,
     event: Arc<event::Factory>,
 }
 
-impl Factory {
-    pub fn new(frame: Arc<frame::Factory>, event: Arc<event::Factory>) -> Self {
-        Self {
-            frame,
-            event,
-        }
-    }
-}
-
-impl super::Factory for Factory {
-    fn new(&self) -> Box<super::Decoder> {
-        Box::new(Decoder {
+impl super::Factory for FactoryImpl {
+    fn new(&self) -> Box<Decoder> {
+        Box::new(DecoderImpl {
             frame: self.frame.new(),
             event: self.event.new(),
         })
     }
 }
 
-
-pub struct Decoder {
+struct DecoderImpl {
     frame: Box<frame::Decoder>,
     event: Box<event::Decoder>,
 }
 
-impl Decoder {
+impl DecoderImpl {
     pub fn new(frame: Box<frame::Decoder>, event: Box<event::Decoder>) -> Self {
         Self {
             frame,
@@ -64,7 +61,7 @@ impl Decoder {
     }
 }
 
-impl super::Decoder for Decoder {
+impl Decoder for DecoderImpl {
     fn decode(&mut self, inp: &[u8], out: &mut Vec<Event>) -> Result<Decode> {
         self.decode(inp, out, false)
     }

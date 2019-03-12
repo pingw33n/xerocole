@@ -84,10 +84,10 @@ impl Config {
         };
 
         let stream_decoder = registry().stream_decoder("gzip").unwrap().new(Default::default())?;
-        let frame_event_decoder = Arc::new(decoder::frame_event::composite::Factory::new(
+        let frame_event_decoder = decoder::frame_event::composite::factory(
             registry().frame_decoder("delimited").unwrap().new(Default::default())?,
             registry().event_decoder("text").unwrap().new(Default::default())?,
-        ));
+        );
 
         Ok(Self {
             path_patterns,

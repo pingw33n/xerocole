@@ -11,7 +11,7 @@ pub struct New {
     pub config: Spanned<Value>,
 }
 
-pub trait DecoderProvider: Provider {
+pub trait Provider: 'static + super::super::Provider {
     fn new(&self, ctx: New) -> Result<Arc<Factory>>;
 }
 
