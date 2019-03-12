@@ -2,26 +2,28 @@ use futures::future;
 use futures::prelude::*;
 
 use super::*;
-use super::super::*;
+use crate::component::{ComponentKind, Metadata, Provider as CProvider};
 use crate::event::*;
 use crate::util::futures::*;
 
-pub struct Provider;
+pub const NAME: &'static str = "stdout";
 
-impl Provider {
-    pub const NAME: &'static str = "stdout";
+pub fn provider() -> Box<Provider> {
+    Box::new(ProviderImpl)
 }
 
-impl super::super::Provider for Provider {
+struct ProviderImpl;
+
+impl CProvider for ProviderImpl {
     fn metadata(&self) -> Metadata {
         Metadata {
             kind: ComponentKind::Output,
-            name: Self::NAME,
+            name: NAME,
         }
     }
 }
 
-impl OutputProvider for Provider {
+impl Provider for ProviderImpl {
     fn new(&self, _ctx: New) -> Result<Box<Output>> {
         let encoder_factory = registry().encoder("debug").unwrap().new(Default::default())?;
         Ok(Box::new(StdoutOutput {

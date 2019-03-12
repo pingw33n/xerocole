@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 use crate::error::*;
 use crate::value::*;
-use output::OutputProvider;
 
 pub trait Provider: Send + Sync {
     fn metadata(&self) -> Metadata;
@@ -42,7 +41,7 @@ enum TypedProvider {
     FrameDecoder(Box<decoder::frame::Provider>),
     Filter(Box<filter::Provider>),
     Input(Box<input::Provider>),
-    Output(Box<OutputProvider>),
+    Output(Box<output::Provider>),
     StreamDecoder(Box<decoder::stream::Provider>),
 }
 
@@ -87,7 +86,7 @@ impl TypedProvider {
         }
     }
 
-    pub fn as_output(&self) -> Option<&Box<OutputProvider>> {
+    pub fn as_output(&self) -> Option<&Box<output::Provider>> {
         if let TypedProvider::Output(v) = self {
             Some(v)
         } else {
@@ -181,15 +180,15 @@ impl Registry {
             TypedProvider::FrameDecoder(provider));
     }
 
-    pub fn output<'a>(&'a self, name: &str) -> Option<&'a dyn OutputProvider> {
+    pub fn output<'a>(&'a self, name: &str) -> Option<&'a dyn output::Provider> {
         self.components.get(&(ComponentKind::Output, name.to_string()))
             .and_then(|v| v.as_output())
             .map(|v| v.as_ref())
     }
 
-    pub fn register_output(&mut self, provider: impl 'static + OutputProvider) {
+    pub fn register_output(&mut self, provider: Box<output::Provider>) {
         self.components.insert((ComponentKind::Output, provider.metadata().name.into()),
-            TypedProvider::Output(Box::new(provider)));
+            TypedProvider::Output(provider));
     }
 }
 
@@ -207,8 +206,8 @@ lazy_static! {
 
         r.register_input(input::file::provider());
 
-        r.register_output(output::null::Provider);
-        r.register_output(output::stdout::Provider);
+        r.register_output(output::null::provider());
+        r.register_output(output::stdout::provider());
 
         r.register_stream_decoder(decoder::stream::gzip::provider());
         r.register_stream_decoder(decoder::stream::plain::provider());

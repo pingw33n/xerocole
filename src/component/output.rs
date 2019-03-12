@@ -23,7 +23,7 @@ pub struct Started {
     pub sink: BoxSink<Event, Error>,
 }
 
-pub trait OutputProvider: Provider {
+pub trait Provider: super::Provider {
     fn new(&self, ctx: New) -> Result<Box<Output>>;
 }
 
