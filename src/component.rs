@@ -39,7 +39,7 @@ pub enum ComponentKind {
 }
 
 enum TypedProvider {
-    Encoder(Box<encoder::EncoderProvider>),
+    Encoder(Box<encoder::Provider>),
     EventDecoder(Box<decoder::event::Provider>),
     FrameDecoder(Box<decoder::frame::Provider>),
     Filter(Box<FilterProvider>),
@@ -49,7 +49,7 @@ enum TypedProvider {
 }
 
 impl TypedProvider {
-    pub fn as_encoder(&self) -> Option<&Box<encoder::EncoderProvider>> {
+    pub fn as_encoder(&self) -> Option<&Box<encoder::Provider>> {
         if let TypedProvider::Encoder(v) = self {
             Some(v)
         } else {
@@ -139,15 +139,15 @@ impl Registry {
             TypedProvider::Input(Box::new(provider)));
     }
 
-    pub fn encoder<'a>(&'a self, name: &str) -> Option<&'a dyn encoder::EncoderProvider> {
+    pub fn encoder<'a>(&'a self, name: &str) -> Option<&'a dyn encoder::Provider> {
         self.components.get(&(ComponentKind::Encoder, name.to_string()))
             .and_then(|v| v.as_encoder())
             .map(|v| v.as_ref())
     }
 
-    pub fn register_encoder(&mut self, provider: impl 'static + encoder::EncoderProvider) {
+    pub fn register_encoder(&mut self, provider: Box<encoder::Provider>) {
         self.components.insert((ComponentKind::Encoder, provider.metadata().name.into()),
-            TypedProvider::Encoder(Box::new(provider)));
+            TypedProvider::Encoder(provider));
     }
 
     pub fn stream_decoder<'a>(&'a self, name: &str) -> Option<&'a dyn decoder::stream::Provider> {
@@ -199,7 +199,7 @@ lazy_static! {
     static ref REGISTRY: Registry = {
         let mut r = Registry::new();
 
-        r.register_encoder(encoder::debug::Provider);
+        r.register_encoder(encoder::debug::provider());
 
         r.register_event_decoder(decoder::event::text::provider());
 

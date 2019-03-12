@@ -1,24 +1,27 @@
 use std::io::Write;
 
 use super::*;
+use crate::component::{ComponentKind, Metadata, Provider as CProvider};
 use crate::event::*;
 
-pub struct Provider;
+pub const NAME: &'static str = "debug";
 
-impl Provider {
-    pub const NAME: &'static str = "debug";
+pub fn provider() -> Box<Provider> {
+    Box::new(ProviderImpl)
 }
 
-impl crate::component::Provider for Provider {
+struct ProviderImpl;
+
+impl CProvider for ProviderImpl {
     fn metadata(&self) -> Metadata {
         Metadata {
             kind: ComponentKind::Encoder,
-            name: Self::NAME,
+            name: NAME,
         }
     }
 }
 
-impl EncoderProvider for Provider {
+impl Provider for ProviderImpl {
     fn new(&self, _ctx: New) -> Result<Arc<Factory>> {
         Ok(Arc::new(FactoryImpl {}))
     }
