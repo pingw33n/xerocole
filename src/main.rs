@@ -67,7 +67,7 @@ fn main() {
 
     let mut ppl_builder = pipeline::PipelineBuilder::new(metrics.clone());
     ppl_builder
-        .input(None, input)
+        .input("file".into(), None, input)
         .graph(pipeline::Node::Filters((
                 vec![component::registry().filter("grok").unwrap().new(filter::New {
                         config: value!{{

@@ -103,13 +103,6 @@ struct FileInput {
     config: Config,
 }
 
-impl Component for FileInput {
-    fn provider_metadata(&self) -> Metadata {
-        use super::super::{Provider as P};
-        ProviderImpl.metadata()
-    }
-}
-
 impl Input for FileInput {
     fn start(&self) -> BoxFuture<Started, Error> {
         let (shutdown_tx, shutdown_rx) = signal::signal();

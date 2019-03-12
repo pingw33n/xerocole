@@ -24,6 +24,6 @@ pub trait Provider: 'static + super::Provider {
     fn new(&self, ctx: New) -> Result<Box<Input>>;
 }
 
-pub trait Input: Component {
+pub trait Input: Send {
     fn start(&self) -> BoxFuture<Started, Error>;
 }

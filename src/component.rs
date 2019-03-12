@@ -14,10 +14,6 @@ pub trait Provider: Send + Sync {
     fn metadata(&self) -> Metadata;
 }
 
-pub trait Component: Send {
-    fn provider_metadata(&self) -> Metadata;
-}
-
 #[derive(Clone, Debug)]
 pub struct Metadata {
     pub name: &'static str,

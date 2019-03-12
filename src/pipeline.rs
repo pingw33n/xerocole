@@ -19,6 +19,7 @@ use crate::retry::RetryErrorHandler;
 use crate::util::futures::*;
 
 struct InputInfo {
+    pub name: String,
     pub id: String,
     pub input: Box<Input>,
 }
@@ -109,20 +110,19 @@ impl PipelineBuilder {
         self
     }
 
-    fn gen_input_id(&self, input: &Box<Input>) -> String {
-        let name = input.provider_metadata().name;
+    fn gen_input_id(&self, name: &str) -> String {
         let mut i = 1;
         for input in &self.inputs {
-            if input.input.provider_metadata().name == name {
+            if input.name == name {
                 i += 1;
             }
         }
         format!("{}-{}", name, i)
     }
 
-    pub fn input(&mut self, id: Option<String>, input: Box<Input>) -> &mut Self {
-        let id = id.unwrap_or_else(|| self.gen_input_id(&input));
-        self.inputs.push(InputInfo { id, input });
+    pub fn input(&mut self, name: String, id: Option<String>, input: Box<Input>) -> &mut Self {
+        let id = id.unwrap_or_else(|| self.gen_input_id(&name));
+        self.inputs.push(InputInfo { name, id, input });
         self
     }
 
@@ -164,8 +164,7 @@ impl PipelineBuilder {
         metrics: Arc<Metrics>)
     {
         for input in inputs {
-            let InputInfo { id, input } = input;
-            let name = input.provider_metadata().name;
+            let InputInfo { id, name, input } = input;
             let out_metric_name = format!("input.{}.out", id.clone());
             metrics.set(out_metric_name.clone(), metric::Value::Counter(0.into()));
 
