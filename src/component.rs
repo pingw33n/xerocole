@@ -196,7 +196,7 @@ lazy_static! {
 
         r.register_event_decoder(decoder::event::text::provider());
 
-        r.register_filter(filter::grok::provider());
+        r.register_filter(filter::regex::provider());
 
         r.register_frame_decoder(decoder::frame::delimited::provider());
 

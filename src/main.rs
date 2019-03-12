@@ -69,10 +69,10 @@ fn main() {
     ppl_builder
         .input("file".into(), None, input)
         .graph(pipeline::Node::Filters((
-                vec![component::registry().filter("grok").unwrap().new(filter::New {
+                vec![component::registry().filter("regex").unwrap().new(filter::New {
                         config: value!{{
                             "match" => {
-                                "message" => r#"(?<controller>[^#]+)#(?<action>\w+)"#,
+                                "message" => r#"(?P<controller>[^#]+)#(?P<action>\w+)"#,
                             }
                         }}.into(),
                         common_config: Default::default()

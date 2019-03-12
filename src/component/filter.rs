@@ -1,4 +1,4 @@
-pub mod grok;
+pub mod regex;
 
 use std::sync::Arc;
 

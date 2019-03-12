@@ -1,5 +1,5 @@
 use futures::{future, stream};
-use onig::Regex;
+use ::regex::Regex;
 use std::sync::Arc;
 
 use super::*;
@@ -9,7 +9,7 @@ use crate::event::*;
 use crate::util::futures::{BoxFuture, BoxStream};
 use crate::value::*;
 
-pub const NAME: &'static str = "grok";
+pub const NAME: &'static str = "regex";
 
 pub fn provider() -> Box<Provider> {
     Box::new(ProviderImpl)
@@ -34,41 +34,9 @@ impl Provider for ProviderImpl {
     }
 }
 
-struct CloneableRegex {
-    regex: Regex,
-    pattern: String,
-}
-
-impl CloneableRegex {
-    pub fn new(pattern: impl Into<String>) -> ::std::result::Result<Self, onig::Error> {
-        let pattern = pattern.into();
-        Ok(Self {
-            regex: Regex::new(&pattern)?,
-            pattern,
-        })
-    }
-}
-
-impl Clone for CloneableRegex {
-    fn clone(&self) -> Self {
-        Self {
-            regex: Regex::new(&self.pattern).unwrap(),
-            pattern: self.pattern.clone(),
-        }
-    }
-}
-
-impl ::std::ops::Deref for CloneableRegex {
-    type Target = Regex;
-
-    fn deref(&self) -> &Self::Target {
-        &self.regex
-    }
-}
-
 #[derive(Clone)]
 struct Config {
-    patterns: Vec<(String, Vec<CloneableRegex>)>,
+    patterns: Vec<(String, Vec<Regex>)>,
 }
 
 impl Config {
@@ -96,8 +64,8 @@ impl Config {
         })
     }
 
-    fn parse_regex(s: Spanned<Value>) -> Result<CloneableRegex> {
-        CloneableRegex::new(s.as_str()?)
+    fn parse_regex(s: Spanned<Value>) -> Result<Regex> {
+        Regex::new(s.as_str()?)
             .map_err(move |_| s.new_error("invalid regular expression"))
     }
 }
@@ -125,11 +93,12 @@ impl Filter for FilterImpl {
             let value = event.fields().get(field).and_then(|v| v.as_string().ok());
             if let Some(value) = value {
                 for regex in regexes {
-                    if let Some(cap) = regex.captures_iter(value).next() {
-                        for (name, i) in regex.capture_names() {
-                            let cap_value = cap.at(i[0] as usize);
-                            if let Some(cap_value) = cap_value {
-                                new_fields.push((name.to_owned(), cap_value.to_owned()));
+                    if let Some(caps) = regex.captures_iter(value).next() {
+                        for (i, name) in regex.capture_names().enumerate() {
+                            if let Some(name) = name {
+                                if let Some(cap_value) = caps.get(i) {
+                                    new_fields.push((name.to_owned(), cap_value.as_str().to_owned()));
+                                }
                             }
                         }
                     }
