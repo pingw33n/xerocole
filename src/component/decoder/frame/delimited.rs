@@ -91,10 +91,10 @@ impl Decoder for DecoderImpl {
                         .map(|i| (i, 2))),
                     3 => decode_string(inp, out, new_memchr3(s[0], s[1], s[2], inp, 0)
                         .map(|i| (i, 3))),
-                    len => decode_string(inp, out, new_memchr3(s[0], s[1], s[2], inp, 0)
+                    len => decode_string(inp, out, new_memchr3_overlapping(s[0], s[1], s[2], inp, 0)
                         .filter(|i| {
                             let start = i + 3;
-                            let end = start + s.len();
+                            let end = i + s.len();
                             if inp.len() >= end {
                                 &inp[start..end] == &s[3..]
                             } else {
@@ -277,6 +277,11 @@ fn new_memchr3<'a>(n1: u8, n2: u8, n3: u8, hs: &'a [u8], start: usize) -> impl '
     new_memchr::<Len3, _>(hs, start, move |hs| memchr3(n1, n2, n3, hs))
 }
 
+#[inline]
+fn new_memchr3_overlapping<'a>(n1: u8, n2: u8, n3: u8, hs: &'a [u8], start: usize) -> impl 'a + Iterator<Item=usize> {
+    new_memchr::<Len1, _>(hs, start, move |hs| memchr3(n1, n2, n3, hs))
+}
+
 impl<F, L> Iterator for Memchr<'_, F, L>
     where F: FnMut(&[u8]) -> Option<usize>,
           L: Len,
@@ -415,7 +420,11 @@ mod test {
         use super::*;
 
         fn new<'a>() -> (Box<Decoder>, Vec<&'a [u8]>) {
-            let dec = ProviderImpl.new(New { config: value!{{ STRING => "~!~" }}.into() })
+            new_with_str("~!~")
+        }
+
+        fn new_with_str<'a>(s: &str) -> (Box<Decoder>, Vec<&'a [u8]>) {
+            let dec = ProviderImpl.new(New { config: value!{{ STRING => s }}.into() })
                 .unwrap().new();
             let frames = Vec::new();
             (dec, frames)
@@ -449,6 +458,15 @@ mod test {
             assert_eq!(&frames[..], &[&b"test\x01"[..], &b"test\x02"[..]]);
             assert_eq!(dec.finish(&b""[..], frames).unwrap(), decode(0, 1));
             assert_eq!(&frames[..], &[&b"test\x01"[..], &b"test\x02"[..], &b""[..]]);
+        }
+
+        #[test]
+        fn long() {
+            let (ref mut dec, ref mut frames) = new_with_str("ddddelim");
+
+            assert_eq!(dec.decode(&b"line1_dddddelim_line2_ddddelim"[..], frames).unwrap(),
+                decode(30, 2));
+            assert_eq!(&frames[..], &[&b"line1_d"[..], &b"_line2_"[..]]);
         }
     }
 }
