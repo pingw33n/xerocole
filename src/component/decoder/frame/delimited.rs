@@ -1,5 +1,7 @@
 use memchr::*;
+use regex::bytes::Regex;
 use std::marker::PhantomData;
+use std::ops::Range;
 
 use super::*;
 use crate::component::{ComponentKind, Metadata, Provider as CProvider};
@@ -9,6 +11,11 @@ pub const NAME: &'static str = "delimited";
 
 const STRING: &'static str = "string";
 const LINE: &'static str = "line";
+const GLUE: &'static str = "glue";
+const GLUE_ON: &'static str = "on";
+const GLUE_TO: &'static str = "to";
+const GLUE_TO_PREVIOUS: &'static str = "previous";
+const GLUE_TO_NEXT: &'static str = "next";
 
 pub fn provider() -> Box<Provider> {
     Box::new(ProviderImpl)
@@ -49,20 +56,46 @@ impl Provider for ProviderImpl {
             Delimiter::Line
         };
 
+        let glue = if let Some(glue) = ctx.config.remove_opt(GLUE)? {
+            let on = glue.get(GLUE_ON)?;
+            let on = Regex::new(on.as_str()?)
+                .map_err(move |_| on.new_error("invalid regular expression"))?;
+
+            let to = glue.get(GLUE_TO)?;
+            let to = match to.as_str()? {
+                GLUE_TO_PREVIOUS => GlueTo::Previous,
+                GLUE_TO_NEXT => GlueTo::Next,
+                _ => return Err(ErrorDetails::new(
+                        format!("`{}` must be one of [\"{}\", \"{}\"]",
+                            to.as_str().unwrap(), GLUE_TO_PREVIOUS, GLUE_TO_NEXT),
+                        to.span.clone())
+                        .wrap_id(ErrorId::Parse)),
+            };
+            Some(Glue {
+                on,
+                to,
+            })
+        } else {
+            None
+        };
+
         Ok(Arc::new(FactoryImpl {
             delimiter,
+            glue,
         }))
     }
 }
 
 struct FactoryImpl {
     delimiter: Delimiter,
+    glue: Option<Glue>,
 }
 
 impl Factory for FactoryImpl {
     fn new(&self) -> Box<Decoder> {
         Box::new(DecoderImpl {
             delimiter: self.delimiter.clone(),
+            glue: self.glue.clone().map(|config| GlueState::new(config))
         })
     }
 }
@@ -73,25 +106,150 @@ enum Delimiter {
     String(String),
 }
 
+#[derive(Clone, Copy, Debug)]
+enum GlueTo {
+    Previous,
+    Next,
+}
+
+#[derive(Clone, Debug)]
+struct Glue {
+    on: Regex,
+    to: GlueTo,
+}
+
+#[derive(Debug)]
+struct Flush {
+    slice: Range<usize>,
+    delim_len: usize,
+}
+
+#[derive(Debug)]
+enum GlueResult {
+    Flush(Flush),
+    Glue,
+}
+
+#[derive(Debug)]
+struct GlueState {
+    config: Glue,
+
+    /// Points to the start of active slice of the glue buffer.
+    /// Effectively it is located immediately after the last flushed slice.
+    start: usize,
+
+    /// Absolute position in the glue buffer. This is where new frame will begin.
+    pos: usize,
+
+    /// Last matched delimiter len.
+    delim_len: usize,
+}
+
+impl GlueState {
+    pub fn new(config: Glue) -> Self {
+        Self {
+            config,
+            start: 0,
+            pos: 0,
+            delim_len: 0,
+        }
+    }
+
+    /// `buf` is the current glue buffer which consists of the previous glued frames with new
+    /// frame at `self.pos`. The new frame includes the delimiter bytes of len `delim_len`.
+    pub fn update(&mut self, buf: &[u8], delim_len: usize) -> GlueResult {
+        // line
+        //     glued^
+        //     glued^
+        // line
+
+        // line\
+        // glued\
+        // glued
+        // line
+
+        let frame = &buf[self.pos..buf.len() - delim_len];
+        if self.config.on.is_match(frame) {
+            match self.config.to {
+                GlueTo::Previous => {
+                    self.pos = buf.len();
+                    self.delim_len = delim_len;
+                }
+                GlueTo::Next => {}
+            }
+            GlueResult::Glue
+        } else {
+            let r = match self.config.to {
+                GlueTo::Previous => {
+                    let r = if self.pos == self.start {
+                        GlueResult::Glue
+                    } else {
+                        GlueResult::Flush(Flush {
+                            slice: self.start..self.pos,
+                            delim_len: self.delim_len,
+                        })
+                    };
+                    self.start = self.pos;
+                    r
+                }
+                GlueTo::Next => {
+                    let r = GlueResult::Flush(Flush {
+                        slice: self.start..buf.len(),
+                        delim_len,
+                    });
+                    dbg!(&r);
+                    self.start = buf.len();
+                    r
+                }
+            };
+            self.pos = buf.len();
+            self.delim_len = delim_len;
+            r
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.start = 0;
+        self.pos = 0;
+        self.delim_len = 0;
+    }
+
+    pub fn rebase(&mut self) {
+        self.pos -= self.start;
+        self.start = 0;
+        self.delim_len = 0;
+    }
+}
+
 struct DecoderImpl {
     delimiter: Delimiter,
+    glue: Option<GlueState>,
 }
 
 impl Decoder for DecoderImpl {
     fn decode<'a>(&mut self, inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Result<Decode> {
+        let start = self.glue.as_ref().map(|g| g.pos).unwrap_or(0);
         Ok(match &self.delimiter {
-            Delimiter::Line => decode_line(inp, out),
+            Delimiter::Line => decode_line(inp, out, &mut self.glue, start),
             Delimiter::String(s) => {
                 let s = s.as_bytes();
                 match s.len() {
                     0 => decode_undelimited(inp, out),
-                    1 => decode_string(inp, out, new_memchr1(s[0], inp, 0)
+
+                    1 => decode_string(inp, out, &mut self.glue,
+                        new_memchr1(s[0], inp, start)
                         .map(|i| (i, 1))),
-                    2 => decode_string(inp, out, new_memchr2(s[0], s[1], inp, 0)
+
+                    2 => decode_string(inp, out, &mut self.glue,
+                        new_memchr2(s[0], s[1], inp, start)
                         .map(|i| (i, 2))),
-                    3 => decode_string(inp, out, new_memchr3(s[0], s[1], s[2], inp, 0)
+
+                    3 => decode_string(inp, out, &mut self.glue,
+                        new_memchr3(s[0], s[1], s[2], inp, start)
                         .map(|i| (i, 3))),
-                    len => decode_string(inp, out, new_memchr3_overlapping(s[0], s[1], s[2], inp, 0)
+
+                    len => decode_string(inp, out, &mut self.glue,
+                        new_memchr3_overlapping(s[0], s[1], s[2], inp, start)
                         .filter(|i| {
                             let start = i + 3;
                             let end = i + s.len();
@@ -108,6 +266,9 @@ impl Decoder for DecoderImpl {
     }
 
     fn finish<'a>(&mut self, inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Result<Decode> {
+        if let Some(glue) = &mut self.glue {
+            glue.reset();
+        }
         Ok(match &self.delimiter {
             Delimiter::Line => finish_line(inp, out),
             Delimiter::String(_) => decode_undelimited(inp, out),
@@ -131,14 +292,14 @@ struct LineEndings<'a> {
 }
 
 impl<'a> LineEndings<'a> {
-    pub fn new(buf: &'a [u8]) -> Self {
+    pub fn new(buf: &'a [u8], start: usize) -> Self {
         let mut r = Self {
             buf,
             cr: 0,
             lf: 0,
         };
-        r.next_cr(0);
-        r.next_lf(0);
+        r.next_cr(start);
+        r.next_lf(start);
         r
     }
 
@@ -184,15 +345,19 @@ impl Iterator for LineEndings<'_> {
     }
 }
 
-fn decode_line<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Decode {
-    decode_string(inp, out, LineEndings::new(inp))
+fn decode_line<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>,
+    glue: &mut Option<GlueState>, start: usize) -> Decode
+{
+    decode_string(inp, out, glue, LineEndings::new(inp, start))
 }
 
 fn finish_line<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Decode {
-    let trailing_delim = if inp.len() > 0 && inp[inp.len() - 1] == b'\r' {
-        1
-    } else if inp.len() > 1 && inp[inp.len() - 2] == b'\r' && inp[inp.len() - 1] == b'\n' {
+    let trailing_delim = if inp.len() > 1 &&
+        inp[inp.len() - 2] == b'\r' && inp[inp.len() - 1] == b'\n'
+    {
         2
+    } else if inp.len() > 0 && (inp[inp.len() - 1] == b'\r' || inp[inp.len() - 1] == b'\n') {
+        1
     } else {
         0
     };
@@ -207,14 +372,35 @@ fn finish_line<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Decode {
 }
 
 fn decode_string<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>,
+    glue: &mut Option<GlueState>,
     iter: impl Iterator<Item=(usize, usize)>) -> Decode
 {
     let mut read = 0;
     let mut written = 0;
-    for (i, delimiter_len) in iter {
-        out.push(&inp[read..i]);
-        read = i + delimiter_len;
-        written += 1;
+    if let Some(glue) = glue {
+        for (i, delimiter_len) in iter {
+            assert!(i >= glue.pos);
+            match glue.update(&inp[..i + delimiter_len], delimiter_len) {
+                GlueResult::Glue => continue,
+                GlueResult::Flush(flush) => {
+                    dbg!((i, delimiter_len));
+                    dbg!(&flush);
+                    dbg!(glue.delim_len);
+                    out.push(&inp[flush.slice.start..flush.slice.end - flush.delim_len]);
+                    read = flush.slice.end;
+                }
+            }
+            written += 1;
+        }
+        glue.rebase();
+        dbg!(&glue);
+    } else {
+        for (i, delimiter_len) in iter {
+            dbg!((i, delimiter_len));
+            out.push(&inp[read..i]);
+            read = i + delimiter_len;
+            written += 1;
+        }
     }
     Decode {
         read,
@@ -467,6 +653,101 @@ mod test {
             assert_eq!(dec.decode(&b"line1_dddddelim_line2_ddddelim"[..], frames).unwrap(),
                 decode(30, 2));
             assert_eq!(&frames[..], &[&b"line1_d"[..], &b"_line2_"[..]]);
+        }
+    }
+
+    mod glue {
+        use super::*;
+
+        mod any_line {
+            use super::*;
+
+            fn new<'a>(on: &str, to: GlueTo) -> (Box<Decoder>, Vec<&'a [u8]>) {
+                let to = match to {
+                    GlueTo::Previous => GLUE_TO_PREVIOUS,
+                    GlueTo::Next => GLUE_TO_NEXT,
+                };
+                let dec = ProviderImpl.new(New { config: value! {{
+                    GLUE => {
+                        GLUE_ON => on,
+                        GLUE_TO => to
+                    }
+                }}.into() }).unwrap().new();
+                let frames = Vec::new();
+                (dec, frames)
+            }
+
+            #[test]
+            fn resets_after_finish() {
+                let (ref mut dec, ref mut frames) = new("^!", GlueTo::Previous);
+
+                assert_eq!(dec.decode(&b"line1\nline2\n"[..], frames).unwrap(), decode(6, 1));
+                assert_eq!(dec.finish(&b"line2\n"[..], frames).unwrap(), decode(6, 2));
+                assert_eq!(dec.decode(&b"line3\n\n"[..], frames).unwrap(), decode(6, 1));
+
+                assert_eq!(&frames[..], &[
+                    &b"line1"[..],
+                    &b"line2"[..],
+                    &b""[..],
+                    &b"line3"[..],
+                ]);
+            }
+
+            #[test]
+            fn line_to_previous() {
+                let (ref mut dec, ref mut frames) = new("^[\\s!]", GlueTo::Previous);
+
+                let inp = &b"line0\r\n\
+                    line1\n line1.2\
+                    \n! line1.3\
+                    \nline2\n\
+                    \tline2.1\r"
+                    [..];
+
+                assert_eq!(dec.decode(&inp[..13], frames).unwrap(), decode(7, 1));
+                assert_eq!(&frames[..], &[&b"line0"[..]]);
+
+                frames.clear();
+                assert_eq!(dec.decode(&inp[7..21], frames).unwrap(), decode(0, 0));
+                assert_eq!(frames.len(), 0);
+
+                assert_eq!(dec.decode(&inp[7..31], frames).unwrap(), decode(0, 0));
+                assert_eq!(frames.len(), 0);
+
+                assert_eq!(dec.decode(&inp[7..38], frames).unwrap(), decode(25, 1));
+                assert_eq!(&frames[..], &[&b"line1\n line1.2\n! line1.3"[..]]);
+
+                frames.clear();
+                assert_eq!(dec.finish(&inp[32..], frames).unwrap(), decode(15, 2));
+                assert_eq!(&frames[..], &[&b"line2\n\tline2.1"[..], &b""[..]]);
+            }
+
+            #[test]
+            fn line_to_next() {
+                let (ref mut dec, ref mut frames) = new("[~!]$", GlueTo::Next);
+
+                let inp = &b"line1\r\
+                    line2 ~\n\
+                    line2.1 !\n\
+                    line2.2\n\
+                    line3!\r\
+                    line3.1~\r"
+                    [..];
+
+                assert_eq!(dec.decode(&inp[..10], frames).unwrap(), decode(6, 1));
+                assert_eq!(&frames[..], &[&b"line1"[..]]);
+
+                frames.clear();
+                assert_eq!(dec.decode(&inp[6..35], frames).unwrap(), decode(26, 1));
+                assert_eq!(&frames[..], &[&b"line2 ~\nline2.1 !\nline2.2"[..]]);
+
+                frames.clear();
+                assert_eq!(dec.decode(&inp[32..], frames).unwrap(), decode(0, 0));
+                assert_eq!(frames.len(), 0);
+
+                assert_eq!(dec.finish(&inp[32..], frames).unwrap(), decode(16, 2));
+                assert_eq!(&frames[..], &[&b"line3!\rline3.1~"[..], &b""[..]]);
+            }
         }
     }
 }
