@@ -56,7 +56,7 @@ impl Decoder for DecoderImpl {
         Ok(1)
     }
 
-    fn finish(&mut self, _out: &mut Vec<Event>) -> Result<usize> {
+    fn flush(&mut self, _out: &mut Vec<Event>) -> Result<usize> {
         Ok(0)
     }
 }

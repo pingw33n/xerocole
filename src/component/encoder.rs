@@ -22,5 +22,5 @@ pub trait Factory: 'static + Send + Sync {
 pub trait Encoder: 'static + Send {
     fn encode(&mut self, event: &Event, out: &mut Vec<u8>) -> Result<()>;
 
-    fn finish(&mut self, out: &mut Vec<u8>) -> Result<()>;
+    fn flush(&mut self, out: &mut Vec<u8>) -> Result<()>;
 }

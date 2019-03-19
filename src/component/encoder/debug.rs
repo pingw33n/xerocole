@@ -52,7 +52,7 @@ impl Encoder for EncoderImpl {
         Ok(())
     }
 
-    fn finish(&mut self, _out: &mut Vec<u8>) -> Result<()> {
+    fn flush(&mut self, _out: &mut Vec<u8>) -> Result<()> {
         self.first = true;
         Ok(())
     }

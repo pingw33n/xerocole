@@ -22,5 +22,5 @@ pub trait Factory: 'static + Send + Sync {
 pub trait Decoder: 'static + Send {
     fn decode(&mut self, inp: &[u8], out: &mut Vec<Event>) -> Result<usize>;
 
-    fn finish(&mut self, out: &mut Vec<Event>) -> Result<usize>;
+    fn flush(&mut self, out: &mut Vec<Event>) -> Result<usize>;
 }

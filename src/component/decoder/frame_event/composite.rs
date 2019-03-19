@@ -40,10 +40,10 @@ impl DecoderImpl {
         }
     }
 
-    fn decode(&mut self, inp: &[u8], out: &mut Vec<Event>, finish: bool) -> Result<Decode> {
+    fn decode(&mut self, inp: &[u8], out: &mut Vec<Event>, flush: bool) -> Result<Decode> {
         let mut frames = Vec::new();
-        let read = if finish {
-            self.frame.finish(inp, &mut frames)?
+        let read = if flush {
+            self.frame.flush(inp, &mut frames)?
         } else {
             self.frame.decode(inp, &mut frames)?
         }.read;
@@ -51,8 +51,8 @@ impl DecoderImpl {
         for frame in frames {
             written += self.event.decode(&frame, out)?;
         }
-        if finish {
-            written += self.event.finish(out)?;
+        if flush {
+            written += self.event.flush(out)?;
         }
         Ok(Decode {
             read,
@@ -66,7 +66,7 @@ impl Decoder for DecoderImpl {
         self.decode(inp, out, false)
     }
 
-    fn finish(&mut self, inp: &[u8], out: &mut Vec<Event>) -> Result<Decode> {
+    fn flush(&mut self, inp: &[u8], out: &mut Vec<Event>) -> Result<Decode> {
         self.decode(inp, out, true)
     }
 }

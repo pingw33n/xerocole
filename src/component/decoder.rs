@@ -132,11 +132,11 @@ impl BufDecoder {
         self.decode0(out, false)
     }
 
-    pub fn finish(&mut self, out: &mut Vec<Event>) -> Result<usize> {
+    pub fn flush(&mut self, out: &mut Vec<Event>) -> Result<usize> {
         self.decode0(out, true)
     }
 
-    fn decode0(&mut self, out: &mut Vec<Event>, finish: bool) -> Result<usize> {
+    fn decode0(&mut self, out: &mut Vec<Event>, flush: bool) -> Result<usize> {
         let mut written = 0;
         loop {
             let needs_more_input = if self.buf.read().len() > 0 {
@@ -153,8 +153,8 @@ impl BufDecoder {
             let r = self.frame_event.decode(self.stream.buf.read(), out)?;
             self.stream.buf.advance_read_pos(r.read);
             written += r.written;
-            if finish {
-                let r = self.frame_event.finish(self.stream.buf.read(), out)?;
+            if flush {
+                let r = self.frame_event.flush(self.stream.buf.read(), out)?;
                 self.stream.buf.advance_read_pos(r.read);
                 written += r.written;
                 break;

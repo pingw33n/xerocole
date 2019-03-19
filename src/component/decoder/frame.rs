@@ -30,5 +30,5 @@ pub struct Decode {
 pub trait Decoder: 'static + Send {
     fn decode<'a>(&mut self, inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Result<Decode>;
 
-    fn finish<'a>(&mut self, inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Result<Decode>;
+    fn flush<'a>(&mut self, inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Result<Decode>;
 }
