@@ -346,22 +346,26 @@ fn decode_line<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>,
 }
 
 fn flush_line<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>) -> Decode {
+    if inp.is_empty() {
+        return Decode {
+            read: 0,
+            written: 0,
+        };
+    }
+
     let trailing_delim = if inp.len() > 1 &&
         inp[inp.len() - 2] == b'\r' && inp[inp.len() - 1] == b'\n'
     {
         2
-    } else if inp.len() > 0 && (inp[inp.len() - 1] == b'\r' || inp[inp.len() - 1] == b'\n') {
+    } else if inp[inp.len() - 1] == b'\r' || inp[inp.len() - 1] == b'\n' {
         1
     } else {
         0
     };
     out.push(&inp[..inp.len() - trailing_delim]);
-    if trailing_delim > 0 {
-        out.push(&[]);
-    }
     Decode {
         read: inp.len(),
-        written: 1 + (trailing_delim > 0) as usize,
+        written: 1,
     }
 }
 
@@ -403,18 +407,21 @@ fn decode_string<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>,
 }
 
 fn flush_string<'a>(inp: &'a [u8], out: &mut Vec<&'a [u8]>, s: &str) -> Decode {
+    if inp.is_empty() {
+        return Decode {
+            read: 0,
+            written: 0,
+        };
+    }
     let delim_len = if inp.ends_with(s.as_bytes()) {
         s.len()
     } else {
         0
     };
     out.push(&inp[..inp.len() - delim_len]);
-    if delim_len > 0 {
-        out.push(&[]);
-    }
     Decode {
         read: inp.len(),
-        written: 1 + (delim_len > 0) as usize,
+        written: 1,
     }
 }
 
@@ -523,8 +530,8 @@ mod test {
 
             assert_eq!(dec.decode(&b""[..], frames).unwrap(), decode(0, 0));
             assert_eq!(frames.len(), 0);
-            assert_eq!(dec.flush(&b""[..], frames).unwrap(), decode(0, 1));
-            assert_eq!(&frames[..], &[&b""[..]]);
+            assert_eq!(dec.flush(&b""[..], frames).unwrap(), decode(0, 0));
+            assert_eq!(frames.len(), 0);
         }
 
         #[test]
@@ -551,8 +558,8 @@ mod test {
 
             assert_eq!(dec.decode(&b"\r"[..], frames).unwrap(), decode(0, 0));
             assert_eq!(frames.len(), 0);
-            assert_eq!(dec.flush(&b"\r"[..], frames).unwrap(), decode(1, 2));
-            assert_eq!(&frames[..], &[&b""[..], &b""[..]]);
+            assert_eq!(dec.flush(&b"\r"[..], frames).unwrap(), decode(1, 1));
+            assert_eq!(&frames[..], &[&b""[..]]);
         }
 
         #[test]
@@ -561,8 +568,8 @@ mod test {
 
             assert_eq!(dec.decode(&b"\r"[..], frames).unwrap(), decode(0, 0));
             assert_eq!(frames.len(), 0);
-            assert_eq!(dec.flush(&b"\r\n"[..], frames).unwrap(), decode(2, 2));
-            assert_eq!(&frames[..], &[&b""[..], &b""[..]]);
+            assert_eq!(dec.flush(&b"\r\n"[..], frames).unwrap(), decode(2, 1));
+            assert_eq!(&frames[..], &[&b""[..]]);
         }
 
         #[test]
@@ -632,8 +639,8 @@ mod test {
 
             assert_eq!(dec.decode(&b""[..], frames).unwrap(), decode(0, 0));
             assert_eq!(frames.len(), 0);
-            assert_eq!(dec.flush(&b""[..], frames).unwrap(), decode(0, 1));
-            assert_eq!(&frames[..], &[&b""[..]]);
+            assert_eq!(dec.flush(&b""[..], frames).unwrap(), decode(0, 0));
+            assert_eq!(frames.len(), 0);
         }
 
         #[test]
@@ -642,8 +649,10 @@ mod test {
 
             assert_eq!(dec.decode(&b"test\x00~!~"[..], frames).unwrap(), decode(8, 1));
             assert_eq!(&frames[..], &[&b"test\x00"[..]]);
-            assert_eq!(dec.flush(&b""[..], frames).unwrap(), decode(0, 1));
-            assert_eq!(&frames[..], &[&b"test\x00"[..], &b""[..]]);
+
+            frames.clear();
+            assert_eq!(dec.flush(&b""[..], frames).unwrap(), decode(0, 0));
+            assert_eq!(frames.len(), 0);
         }
 
         #[test]
@@ -652,8 +661,10 @@ mod test {
 
             assert_eq!(dec.decode(&b"test\x01~!~test\x02~!~"[..], frames).unwrap(), decode(16, 2));
             assert_eq!(&frames[..], &[&b"test\x01"[..], &b"test\x02"[..]]);
-            assert_eq!(dec.flush(&b""[..], frames).unwrap(), decode(0, 1));
-            assert_eq!(&frames[..], &[&b"test\x01"[..], &b"test\x02"[..], &b""[..]]);
+
+            frames.clear();
+            assert_eq!(dec.flush(&b""[..], frames).unwrap(), decode(0, 0));
+            assert_eq!(frames.len(), 0);
         }
 
         #[test]
@@ -695,13 +706,12 @@ mod test {
                 let (ref mut dec, ref mut frames) = new("^!", GlueTo::Previous);
 
                 assert_eq!(dec.decode(&b"line1\nline2\n"[..], frames).unwrap(), decode(6, 1));
-                assert_eq!(dec.flush(&b"line2\n"[..], frames).unwrap(), decode(6, 2));
+                assert_eq!(dec.flush(&b"line2\n"[..], frames).unwrap(), decode(6, 1));
                 assert_eq!(dec.decode(&b"line3\n\n"[..], frames).unwrap(), decode(6, 1));
 
                 assert_eq!(&frames[..], &[
                     &b"line1"[..],
                     &b"line2"[..],
-                    &b""[..],
                     &b"line3"[..],
                 ]);
             }
@@ -733,8 +743,8 @@ mod test {
                 assert_eq!(&frames[..], &[&b"line1\n line1.2\n! line1.3"[..]]);
 
                 frames.clear();
-                assert_eq!(dec.flush(&inp[32..], frames).unwrap(), decode(15, 2));
-                assert_eq!(&frames[..], &[&b"line2\n\tline2.1"[..], &b""[..]]);
+                assert_eq!(dec.flush(&inp[32..], frames).unwrap(), decode(15, 1));
+                assert_eq!(&frames[..], &[&b"line2\n\tline2.1"[..]]);
             }
 
             #[test]
@@ -760,8 +770,8 @@ mod test {
                 assert_eq!(dec.decode(&inp[32..], frames).unwrap(), decode(0, 0));
                 assert_eq!(frames.len(), 0);
 
-                assert_eq!(dec.flush(&inp[32..], frames).unwrap(), decode(16, 2));
-                assert_eq!(&frames[..], &[&b"line3!\rline3.1~"[..], &b""[..]]);
+                assert_eq!(dec.flush(&inp[32..], frames).unwrap(), decode(16, 1));
+                assert_eq!(&frames[..], &[&b"line3!\rline3.1~"[..]]);
             }
         }
 
@@ -785,13 +795,12 @@ mod test {
                 let (ref mut dec, ref mut frames) = new("||", "^!", GlueTo::Previous);
 
                 assert_eq!(dec.decode(&b"line1||line2||"[..], frames).unwrap(), decode(7, 1));
-                assert_eq!(dec.flush(&b"line2||"[..], frames).unwrap(), decode(7, 2));
+                assert_eq!(dec.flush(&b"line2||"[..], frames).unwrap(), decode(7, 1));
                 assert_eq!(dec.decode(&b"line3||||"[..], frames).unwrap(), decode(7, 1));
 
                 assert_eq!(&frames[..], &[
                     &b"line1"[..],
                     &b"line2"[..],
-                    &b""[..],
                     &b"line3"[..],
                 ]);
             }
@@ -824,8 +833,8 @@ mod test {
                 assert_eq!(&frames[..], &[&b"line1|| line1.2||! line1.3"[..]]);
 
                 frames.clear();
-                assert_eq!(dec.flush(&inp[35..], frames).unwrap(), decode(17, 2));
-                assert_eq!(&frames[..], &[&b"line2||\tline2.1"[..], &b""[..]]);
+                assert_eq!(dec.flush(&inp[35..], frames).unwrap(), decode(17, 1));
+                assert_eq!(&frames[..], &[&b"line2||\tline2.1"[..]]);
             }
 
             #[test]
@@ -851,8 +860,8 @@ mod test {
                 assert_eq!(dec.decode(&inp[36..], frames).unwrap(), decode(0, 0));
                 assert_eq!(frames.len(), 0);
 
-                assert_eq!(dec.flush(&inp[36..], frames).unwrap(), decode(18, 2));
-                assert_eq!(&frames[..], &[&b"line3!||line3.1~"[..], &b""[..]]);
+                assert_eq!(dec.flush(&inp[36..], frames).unwrap(), decode(18, 1));
+                assert_eq!(&frames[..], &[&b"line3!||line3.1~"[..]]);
             }
         }
     }
