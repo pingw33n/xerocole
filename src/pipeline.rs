@@ -76,16 +76,14 @@ impl IntNode {
 type FilterChain = Box<FnMut(Event) -> BoxStream<Event, Error> + Send>;
 
 struct StartGraph<'a> {
-    /// All filters in the graph in a started state.
-    /// The graph traversing code will take filters pointed by the nodes, leaving `None` instead.
     filters: &'a mut [Option<Box<filter::Filter>>],
     output_groups: &'a [mpsc::Sender<Event>],
-    concurrency: usize,
+    filter_concurrency: usize,
 }
 
 pub struct PipelineBuilder {
-    concurrency: usize,
     in_queue_capacity: usize,
+    filter_concurrency: usize,
     inputs: Vec<InputInfo>,
     graph: Option<Node>,
     metrics: Arc<Metrics>,
@@ -94,7 +92,7 @@ pub struct PipelineBuilder {
 impl PipelineBuilder {
     pub fn new(metrics: Arc<Metrics>) -> Self {
         Self {
-            concurrency: num_cpus::get(),
+            filter_concurrency: num_cpus::get(),
             in_queue_capacity: 100,
             inputs: Vec::new(),
             graph: None,
@@ -102,15 +100,18 @@ impl PipelineBuilder {
         }
     }
 
-    pub fn concurrency(&mut self, concurrency: usize) -> &mut Self {
-        assert!(concurrency > 0);
-        self.concurrency = concurrency;
-        self
-    }
-
+    /// Input queue capacity. Input queue is the central queue where events from all inputs are
+    /// placed. One ore more filter graphs are receiving from the input queue.
     pub fn in_queue_capacity(&mut self, in_queue_capacity: usize) -> &mut Self {
         assert!(in_queue_capacity >= 2);
         self.in_queue_capacity = in_queue_capacity;
+        self
+    }
+
+    /// Number of concurrent filter graphs that are receiving from the input queue.
+    pub fn filter_concurrency(&mut self, filter_concurrency: usize) -> &mut Self {
+        assert!(filter_concurrency > 0);
+        self.filter_concurrency = filter_concurrency;
         self
     }
 
@@ -138,7 +139,7 @@ impl PipelineBuilder {
     pub fn start(self) {
         assert!(self.graph.is_some());
 
-        let (in_queue_tx, in_queue_rx) = futures_mpmc::array::<Event>(self.in_queue_capacity);
+        let (in_queue_tx, in_queue_rx) = mpmc::array::<Event>(self.in_queue_capacity);
 
         Self::start_inputs(self.inputs, in_queue_tx, self.metrics);
 
@@ -146,11 +147,12 @@ impl PipelineBuilder {
         let mut output_groups = Vec::new();
         let graph = Arc::new(IntNode::from(self.graph.unwrap(), &mut filters, &mut output_groups));
 
-        let output_groups = Self::start_output_groups(output_groups, self.concurrency);
+        let output_groups = Self::start_output_groups(output_groups, self.filter_concurrency,
+            self.filter_concurrency);
 
-        let concurrency = self.concurrency;
+        let filter_concurrency = self.filter_concurrency;
 
-        for _ in 0..concurrency {
+        for _ in 0..filter_concurrency {
             executor::spawn(Self::start_filters(&filters)
                 .map_err(|e| error!("{:?}", e))
                 .map(clone!(graph, in_queue_rx, output_groups => move |filters| {
@@ -159,7 +161,7 @@ impl PipelineBuilder {
                         &mut StartGraph {
                             filters: &mut filters,
                             output_groups: &output_groups,
-                            concurrency,
+                            filter_concurrency,
                         });
                 })));
         }
@@ -210,7 +212,7 @@ impl PipelineBuilder {
             IntNode::Switch(branches) => {
                 let branches = branches.iter()
                     .map(|(p, n)| {
-                        let (tx, rx) = mpsc::channel::<Event>(ctx.concurrency);
+                        let (tx, rx) = mpsc::channel::<Event>(ctx.filter_concurrency);
                         let rx = Box::new(rx.infallible());
                         let tx = tx.sink_map_err(|e| error!("error sending to branch tx: {:?}", e));
                         Self::start_graph(n, rx, ctx);
@@ -274,18 +276,21 @@ impl PipelineBuilder {
         })
     }
 
-    fn start_output_groups(output_groups: Vec<Vec<Box<Output>>>, concurrency: usize)
-            -> Vec<mpsc::Sender<Event>> {
+    fn start_output_groups(output_groups: Vec<Vec<Box<Output>>>, group_queue_capacity: usize,
+        output_queue_capacity: usize) -> Vec<mpsc::Sender<Event>>
+    {
         output_groups.into_iter()
-            .map(|o| Self::start_output_group(o, concurrency))
+            .map(|o| Self::start_output_group(o, group_queue_capacity, output_queue_capacity))
             .collect()
     }
 
-    fn start_output_group(outputs: Vec<Box<Output>>, concurrency: usize) -> mpsc::Sender<Event> {
+    fn start_output_group(outputs: Vec<Box<Output>>, group_queue_capacity: usize,
+        output_queue_capacity: usize) -> mpsc::Sender<Event>
+    {
         let mut txs = Vec::new();
 
         for output in outputs {
-            let (tx, rx) = mpsc::channel::<Event>(concurrency);
+            let (tx, rx) = mpsc::channel::<Event>(output_queue_capacity);
             executor::spawn(future::lazy(move || {
                 info!("starting output");
                 output.start()
@@ -304,7 +309,7 @@ impl PipelineBuilder {
 
         // Make broadcasting channel.
         let txs = Arc::new(txs);
-        let (bcast_tx, bcast_rx) = mpsc::channel::<Event>(concurrency);
+        let (bcast_tx, bcast_rx) = mpsc::channel::<Event>(group_queue_capacity);
         executor::spawn(bcast_rx
             .for_each(clone!(txs => move |event| {
                 let mut futs = FuturesUnordered::new();
